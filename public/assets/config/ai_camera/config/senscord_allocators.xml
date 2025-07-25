@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<allocators>
+  <allocator key="0" type="heap" cacheable="off">
+  </allocator>
+  <allocator key="1" type="heap" cacheable="off">
+  </allocator>
+
+  <!-- Example: Shared memory (size=16MB), supported by Windows and Linux. -->
+  <!--
+  <allocator key="2" type="shared_memory" cacheable="off">
+    <arguments>
+      <argument name="name" value="somename"/>
+      <argument name="total_size" value="0x1000000"/>
+    </arguments>
+  </allocator>
+  -->
+
+</allocators>

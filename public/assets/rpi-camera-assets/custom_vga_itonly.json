@@ -1,0 +1,11 @@
+{
+  "imx500_no_process": {
+      "network_file": "/usr/share/imx500-models/imx500_network_inputtensoronly.rpk",
+      "save_input_tensor": {
+          "filename": "/home/pi/input_tensor.raw",
+          "num_tensors": 10,
+          "norm_val": [384, 384, 384, 0],
+          "norm_shift": [0, 0, 0, 0]
+      }
+  }
+}

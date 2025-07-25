@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<connections>
+  <!-- TCP socket -->
+  <connection key="tcp" library="tcp_connection">
+    <arguments>
+      <argument name="reuse_addr" value="off"/>
+    </arguments>
+  </connection>
+
+  <!-- Unix domain socket -->
+  <connection key="uds" library="uds_connection"/>
+
+  <!-- Web socket -->
+  <connection key="ws" library="ws_connection"/>
+
+  <!-- Position to add Connection -->
+</connections>
