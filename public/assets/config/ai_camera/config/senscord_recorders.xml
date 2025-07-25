@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<recorders>
+  <recorder format="bin" type="bin_recorder"/>
+  <recorder format="pnm" type="pnm_recorder"/>
+</recorders>

@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Sample server configuration. -->
+<server client="off">
+  <listeners>
+    <listener
+        connection="tcp"
+        address="0.0.0.0:8080"
+        addressSecondary="0.0.0.0:8081" />
+    <listener
+        connection="ws"
+        address="0.0.0.0:65000"
+        addressSecondary="0.0.0.0:65010" />
+    <!--
+    <listener
+        connection="uds"
+        address="@/tmp/senscord"
+        addressSecondary="@/tmp/senscord.2" />
+    -->
+    <!--
+    <listener
+        connection="ucom"
+        address="0:65000" />
+    -->
+  </listeners>
+
+  <streams>
+    <defaults>
+      <frame buffering="off"/>
+    </defaults>
+  </streams>
+</server>

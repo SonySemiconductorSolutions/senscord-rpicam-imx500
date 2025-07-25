@@ -1,0 +1,126 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sdk>
+  <version name="project name" major="1" minor="10" patch="0" description="GM"/>
+  <!--  Defining the streams to use -->
+  <streams>
+    <!-- player stream -->
+    <stream key="player_stream.0">
+      <address instanceName="player_instance.depth" type="depth" port="0"/>
+      <!-- <client instanceName="client_instance.0"/> -->
+      <arguments>
+        <!-- <argument name="target_path" value="/home/user/YYYYMMDD_hhmmss_streamkey/"/> -->
+        <argument name="target_path" value=""/>
+        <argument name="repeat" value="true"/>
+        <argument name="start_offset" value="0"/>
+        <argument name="count" value="all"/>
+        <argument name="speed" value="framerate"/>
+      </arguments>
+    </stream>
+
+    <!-- webcam image stream -->
+    <stream key="inference_stream">
+      <address instanceName="libcamera_image_instance" type="image" port="0"/>
+      <arguments>
+        <argument name="device" value="1"/>
+        <!-- <argument name="device" value="/base/soc/i2c0mux/i2c@1/imx708@1a"/> -->
+        <argument name="width" value="640"/>
+        <argument name="height" value="480"/>
+        <argument name="pixel_format" value="image_rgb24"/>
+        <argument name="post_process_file" value="/opt/senscord/share/rpi-camera-assets/custom.json"/>
+        <argument name="fps" value="10"/>
+        <argument name="display_channel" value="1"/>
+      </arguments>
+    </stream>
+    <!-- Position to add stream -->
+
+    <!-- Defining the default -->
+    <defaults>
+      <frame buffering="on" num="3"/>
+    </defaults>
+  </streams>
+
+  <!-- Defining the instances to use -->
+  <instances>
+    <instance name="client_instance.0" component="component_client">
+      <arguments>
+        <argument name="connection" value="tcp"/>
+        <argument name="address" value="0.0.0.0:8080"/>
+        <argument name="addressSecondary" value="0.0.0.0:8081"/>
+      </arguments>
+    </instance>
+    <instance name="client_instance.1" component="component_client">
+      <arguments>
+        <argument name="connection" value="uds"/>
+        <argument name="address" value="@/tmp/senscord"/>
+        <argument name="addressSecondary" value="@/tmp/senscord.2"/>
+      </arguments>
+    </instance>
+
+    <!-- player image instance -->
+    <instance name="player_instance.image" component="component_player">
+      <arguments>
+        <argument name="port_num" value="5"/>
+        <argument name="port_type" value="image"/>
+      </arguments>
+      <allocators>
+        <allocator key="0"/>
+      </allocators>
+    </instance>
+
+    <instance name="player_instance.depth" component="component_player">
+      <arguments>
+        <argument name="port_num" value="5"/>
+        <argument name="port_type" value="depth"/>
+      </arguments>
+      <allocators>
+        <allocator key="0"/>
+      </allocators>
+    </instance>
+    
+    <instance name="player_instance.imu" component="component_player">
+      <arguments>
+        <argument name="port_num" value="5"/>
+        <argument name="port_type" value="imu"/>
+      </arguments>
+      <allocators>
+        <allocator key="0"/>
+      </allocators>
+    </instance>
+    
+    <instance name="player_instance.slam" component="component_player">
+      <arguments>
+        <argument name="port_num" value="5"/>
+        <argument name="port_type" value="slam"/>
+      </arguments>
+      <allocators>
+        <allocator key="0"/>
+      </allocators>
+    </instance>
+
+    <!-- webcam (Linux) instance -->
+    <instance name="libcamera_image_instance" component="component_libcamera_image">
+      <!-- <allocators> -->
+        <!-- <allocator name="memalloc" key="memalloc"/> -->
+      <!-- </allocators> -->
+    </instance>
+    <!-- Position to add instance -->
+
+  </instances>
+
+  <core>
+    <!-- Log Settings -->
+    <log level="info" tag="core"/>
+    <log level="info" tag="server"/>
+    <log level="info" tag="defaults"/>
+
+    <!-- Position to add user defined logger -->
+
+    <converters>
+      <!-- Core converter -->
+      <converter name="senscord_core_converter" type="property|rawdata"/>
+      <converter name="senscord_inference_property_converter" type="property"/>
+
+      <!-- Position to add converter -->
+    </converters>
+  </core>
+</sdk>
