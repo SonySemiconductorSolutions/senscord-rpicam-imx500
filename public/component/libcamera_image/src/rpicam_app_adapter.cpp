@@ -397,23 +397,21 @@ senscord::Status LibcameraAdapter::Configure(
     senscord::ImageProperty &image_property) {
   SENSCORD_LOG_INFO_TAGGED("libcamera", "LibcameraAdapter::Configure()");
 
-  /* The AIModelBundleID has changed, close and then open the camera. */
-  if (!CheckBundleIdItOnly(ai_model_bundle_id_)) {
-    senscord::Status status = senscord::Status::OK();
+  /* If InputTensor/OutputTensor output enable after executing STREAM_OFF, reopen device. */
+  senscord::Status status = senscord::Status::OK();
 
-    status = Close();
-    if (!status.ok()) {
-      return SENSCORD_STATUS_FAIL(
-        "libcamera", senscord::Status::kCauseInvalidOperation,
-	"Failed to close camera during reconfiguration");
-    }
+  status = Close();
+  if (!status.ok()) {
+    return SENSCORD_STATUS_FAIL(
+      "libcamera", senscord::Status::kCauseInvalidOperation,
+      "Failed to close camera during reconfiguration");
+  }
 
-    status = Open(device_name_, util_, image_property);
-    if (!status.ok()) {
-      return SENSCORD_STATUS_FAIL(
-        "libcamera", senscord::Status::kCauseInvalidOperation,
-	"Failed to open the camera during reconfiguration");
-    }
+  status = Open(device_name_, util_, image_property);
+  if (!status.ok()) {
+    return SENSCORD_STATUS_FAIL(
+      "libcamera", senscord::Status::kCauseInvalidOperation,
+      "Failed to open the camera during reconfiguration");
   }
 
   if (!camera_) {
