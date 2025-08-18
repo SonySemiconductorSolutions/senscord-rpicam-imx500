@@ -85,7 +85,8 @@ LibcameraAdapter::LibcameraAdapter()
       rotation_property_({0}),
       flip_property_({0, 0}),
       device_name_(""),
-      ai_model_bundle_id_(std::string(AiBundleIdVgaItonly)) {}
+      ai_model_bundle_id_(std::string(AiBundleIdItonly)),
+      count_drop_frames_(0) {}
 LibcameraAdapter::~LibcameraAdapter() {}
 
 senscord::Status LibcameraAdapter::Open(
@@ -134,7 +135,7 @@ senscord::Status LibcameraAdapter::Open(
     }
 
     post_process_file =
-        HandleDefaultCustomJsonPathString(options_->post_process_file, ai_model_bundle_id_);
+        HandleCustomJsonPathString(options_->post_process_file, ai_model_bundle_id_);
     if (post_process_file.length()) {
       options_->post_process_file = post_process_file;
     } else {
@@ -367,6 +368,9 @@ senscord::Status LibcameraAdapter::Start() {
 
   libcam_->StartCamera();
   libcam_->SetInferenceRoiAbs(roi_);
+
+  count_drop_frames_ = 0;
+
   return senscord::Status::OK();
 }
 
@@ -417,16 +421,6 @@ senscord::Status LibcameraAdapter::Configure(
   if (!camera_) {
     return SENSCORD_STATUS_FAIL("libcamera",
                                 senscord::Status::kCauseInvalidOperation, "");
-  }
-
-  std::string post_process_file =
-      HandleDefaultCustomJsonPathString(options_->post_process_file, ai_model_bundle_id_);
-  if (post_process_file.length()) {
-    options_->post_process_file = post_process_file;
-  } else {
-    return SENSCORD_STATUS_FAIL(
-        "libcamera", senscord::Status::kCauseInvalidOperation,
-        "The default JSON file does not exist.");
   }
 
   std::unique_ptr<libcamera::CameraConfiguration> config =
@@ -669,26 +663,35 @@ static void RGB888_to_JPEG_fast(const uint8_t *input, int width, int height,
 
 void LibcameraAdapter::GetFrames(std::vector<senscord::FrameInfo> *frames, bool dry_run) {
   static int seq_num = 0;
-  RPiCamApp::Msg msg = libcam_->Wait();
   senscord::FrameInfo frame = {};
+  CompletedRequestPtr payload;
   frame.sequence_number = seq_num++;
   senscord::osal::OSGetTime(&frame.sent_time);
 
-  if (msg.type == RPiCamApp::MsgType::Quit) {
-    SENSCORD_LOG_ERROR("Quit message received");
-  } else if (msg.type != RPiCamApp::MsgType::RequestComplete) {
-    return;
-  }
+  while (1) {
+    RPiCamApp::Msg msg = libcam_->Wait();
+    if (msg.type == RPiCamApp::MsgType::Quit) {
+      SENSCORD_LOG_ERROR("Quit message received");
+      break;
+    } else if (msg.type != RPiCamApp::MsgType::RequestComplete) {
+      return;
+    }
 
-  if (dry_run) {
-    SENSCORD_LOG_INFO("dry_run is enabled");
-    frames_.push_back(frame);
-    *frames = frames_;
-    frames_.clear();
-    return;
-  }
+    if (dry_run) {
+      SENSCORD_LOG_INFO("dry_run is enabled");
+      frames_.push_back(frame);
+      *frames = frames_;
+      frames_.clear();
+      return;
+    }
 
-  CompletedRequestPtr payload = std::get<CompletedRequestPtr>(msg.payload);
+    if (count_drop_frames_ > MAX_NUM_DROP_FRAMES) {
+      payload = std::get<CompletedRequestPtr>(msg.payload);
+      break;
+    }
+
+    count_drop_frames_++;
+  }
 
   senscord::MemoryAllocator *allocator = nullptr;
   senscord::Status status =
@@ -999,7 +1002,19 @@ senscord::Status LibcameraAdapter::SetProperty(
 
 senscord::Status LibcameraAdapter::SetProperty(
     const senscord::libcamera_image::AIModelBundleIdProperty *property) {
-  ai_model_bundle_id_ = property->ai_model_bundle_id;
+  std::string bundle_id = property->ai_model_bundle_id;
+  std::string post_process_file =
+      HandleCustomJsonPathString(options_->post_process_file, bundle_id);
+  if (post_process_file.length()) {
+    options_->post_process_file = post_process_file;
+    ai_model_bundle_id_ = bundle_id;
+  } else {
+    return SENSCORD_STATUS_FAIL(
+        "libcamera", senscord::Status::kCauseInvalidOperation,
+        "The set ai_model_bundle_id(%s) is invalid.",
+        bundle_id.c_str());
+  }
+
   return senscord::Status::OK();
 }
 
@@ -1529,11 +1544,7 @@ senscord::Status LibcameraAdapter::ConvertValue(
 }
 
 bool LibcameraAdapter::CheckBundleIdItOnly(const std::string ai_model_bundle_id) {
-  if ((ai_model_bundle_id == std::string(AiBundleIdItonly)) ||
-      (ai_model_bundle_id == std::string(AiBundleIdReserve)) ||
-      (ai_model_bundle_id == std::string(AiBundleIdVgaRgbItonly)) ||
-      (ai_model_bundle_id == std::string(AiBundleIdVgaItonly))
-  ) {
+  if (ai_model_bundle_id == std::string(AiBundleIdItonly)) {
     SENSCORD_LOG_INFO(
       "ai_model_bundle_id(%s) is InputTensorOnly pattern.", ai_model_bundle_id.c_str());
     return true;
@@ -1544,15 +1555,19 @@ bool LibcameraAdapter::CheckBundleIdItOnly(const std::string ai_model_bundle_id)
 
 std::string LibcameraAdapter::ReplaceCustomJsonPathString(
     const std::string &path,
-    const std::string &target,
     const std::string &replacement) {
   std::string result_path = path;
-  size_t pos = 0;
+  std::string dir_path;
+  size_t pos = result_path.find_last_of("/\\");
 
-  while ((pos = result_path.find(target, pos)) != std::string::npos) {
-    result_path.replace(pos, target.length(), replacement);
-    pos += replacement.length();
+  if (pos != std::string::npos) {
+    dir_path = result_path.substr(0, pos);
+  } else {
+    /* The file name was specified directly. */
+    dir_path = ".";
   }
+
+  result_path =  dir_path + "/" + replacement;
 
   std::ifstream ifs(result_path);
   if (!ifs) {
@@ -1562,19 +1577,22 @@ std::string LibcameraAdapter::ReplaceCustomJsonPathString(
   return result_path;
 }
 
-std::string LibcameraAdapter::HandleDefaultCustomJsonPathString(
+std::string LibcameraAdapter::HandleCustomJsonPathString(
     const std::string &post_process_file, const std::string &ai_model_bundle_id) {
   std::string post_process_file_new = post_process_file;
-  std::string target = CustomParamJsonFile;
-  std::string replacement = CustomVgaItonlyParamJsonFile;
 
   if (CheckBundleIdItOnly(ai_model_bundle_id)) {
-    post_process_file_new = ReplaceCustomJsonPathString(post_process_file, target, replacement);
+    std::string replacement = CustomVgaItonlyParamJsonFile;
+    post_process_file_new = ReplaceCustomJsonPathString(post_process_file, replacement);
   } else {
-    if (!CheckRpkExist(post_process_file)) {
-      post_process_file_new = ReplaceCustomJsonPathString(post_process_file, target, replacement);
+    std::string custom_json_file = "custom_" + ai_model_bundle_id + ".json";
+    post_process_file_new = ReplaceCustomJsonPathString(post_process_file, custom_json_file);
+    if (!CheckRpkExist(post_process_file_new)) {
+      return "";
     }
   }
+
+  SENSCORD_LOG_INFO("Set post_process_file: %s", post_process_file_new.c_str());
 
   return post_process_file_new;
 }
