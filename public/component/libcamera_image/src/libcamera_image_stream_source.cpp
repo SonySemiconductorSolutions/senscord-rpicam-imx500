@@ -533,17 +533,15 @@ senscord::Status LibcameraImageStreamSource::Set(
   SENSCORD_LOG_DEBUG_TAGGED("libcamera",
                             "LibcameraImageStreamSource::Set(libcamera_image::"
                             "AIModelBundleIdProperty)");
-  memcpy(ai_model_bundle_id_.ai_model_bundle_id, property->ai_model_bundle_id,
-         senscord::libcamera_image::kAIModelBundleIdLength);
-
   senscord::Status status;
   status = adapter_.SetProperty(property);
   if (!status.ok()) {
-     return SENSCORD_STATUS_FAIL(
-         "libcamera", senscord::Status::kCauseNotSupported,
-         "LibcameraImageStreamSource::Set(libcamera_image::AIModelBundleIdProperty) "
-         "Failed to set AIModelBundleIdProperty");
+     util_->SendEventError(status);
+     return status;
   }
+
+  memcpy(ai_model_bundle_id_.ai_model_bundle_id, property->ai_model_bundle_id,
+         senscord::libcamera_image::kAIModelBundleIdLength);
 
   return senscord::Status::OK();
 }

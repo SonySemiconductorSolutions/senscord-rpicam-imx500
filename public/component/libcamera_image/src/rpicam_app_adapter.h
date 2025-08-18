@@ -21,6 +21,7 @@
 #define AITRIOS_SENSOR_CHANNEL_ID_INFERENCE_RAW_IMAGE (0x80000000)
 #define IMX500_FULL_RESOLUTION_WIDTH (4056)
 #define IMX500_FULL_RESOLUTION_HEIGHT (3040)
+#define MAX_NUM_DROP_FRAMES (7)
 namespace libcamera {
 class CameraManager;
 class Camera;
@@ -47,10 +48,6 @@ static constexpr unsigned int NetworkNameLen = 64;
 static constexpr unsigned int MaxNumTensors = 16;
 static constexpr unsigned int MaxNumDimensions = 16;
 static constexpr char AiBundleIdItonly[] = "999997";
-static constexpr char AiBundleIdReserve[] = "999992";
-static constexpr char AiBundleIdVgaRgbItonly[] = "999999";
-static constexpr char AiBundleIdVgaItonly[] = "00000000000000000000000000000000";
-static constexpr char CustomParamJsonFile[] = "custom.json";
 static constexpr char CustomVgaItonlyParamJsonFile[] = "custom_vga_itonly.json";
 
 struct OutputTensorInfo {
@@ -162,9 +159,8 @@ class LibcameraAdapter {
   bool CheckBundleIdItOnly(const std::string ai_model_bundle_id);
   std::string ReplaceCustomJsonPathString(
       const std::string &path,
-      const std::string &target,
       const std::string &replacement);
-  std::string HandleDefaultCustomJsonPathString(
+  std::string HandleCustomJsonPathString(
       const std::string &post_process_file,
       const std::string &ai_model_bundle_id);
   std::string ReadPostProcessJsonString(const std::string &post_process_file);
@@ -204,6 +200,7 @@ class LibcameraAdapter {
   uint32_t div_shift_;
   std::string device_name_;
   std::string ai_model_bundle_id_;
+  int32_t count_drop_frames_;
 
   void UpdateTensorShapesProperty(CompletedRequestPtr payload);
 };
