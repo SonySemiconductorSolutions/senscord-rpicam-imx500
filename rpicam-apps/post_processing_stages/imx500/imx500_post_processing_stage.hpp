@@ -79,4 +79,7 @@ private:
 	std::vector<int16_t> div_val_;
 	unsigned int div_shift_;
 	std::mutex lock_;
+
+	std::thread progress_thread_;
+	std::atomic<bool> progress_thread_running_{false};
 };

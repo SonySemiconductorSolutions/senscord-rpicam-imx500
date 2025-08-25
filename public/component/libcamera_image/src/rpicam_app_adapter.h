@@ -48,6 +48,7 @@ static constexpr unsigned int NetworkNameLen = 64;
 static constexpr unsigned int MaxNumTensors = 16;
 static constexpr unsigned int MaxNumDimensions = 16;
 static constexpr char AiBundleIdItonly[] = "999997";
+static constexpr char AiBundleIdVgaRgbItonly[] = "999999";
 static constexpr char CustomVgaItonlyParamJsonFile[] = "custom_vga_itonly.json";
 
 struct OutputTensorInfo {
@@ -126,6 +127,9 @@ class LibcameraAdapter {
       senscord::libcamera_image::CameraImageFlipProperty *property);
   senscord::Status SetProperty(
       const senscord::libcamera_image::AIModelBundleIdProperty *property);
+
+  senscord::Status GetAIModelVersion(std::string &ai_model_version);
+
   // for internal use
   senscord::Status SetLibcameraControl(
       const libcamera::ControlId &control_id,
@@ -164,6 +168,7 @@ class LibcameraAdapter {
       const std::string &post_process_file,
       const std::string &ai_model_bundle_id);
   std::string ReadPostProcessJsonString(const std::string &post_process_file);
+  std::string GetRpkPath(const std::string &json_str);
   bool CheckRpkExist(const std::string &post_process_file);
 
  private:

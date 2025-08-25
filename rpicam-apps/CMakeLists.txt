@@ -13,6 +13,14 @@ option(ENABLE_OPENCV   "Enable OpenCV postprocessing" OFF)
 option(ENABLE_TFLITE   "Enable TFLite postprocessing" OFF)
 option(ENABLE_HAILO    "Enable Hailo postprocessing" OFF)
 option(ENABLE_IMX500   "Enable IMX500 postprocessing" ON)
+
+if(JPEG_ENABLED)
+  message(STATUS "Test mode enabled: JPEG support activated")
+endif()
+if(EXIF_ENABLED)
+  message(STATUS "Test mode enabled: EXIF support activated")
+endif()
+
 option(BUILD_TESTS     "Enable building tests" OFF)
 set(NEON_FLAGS "auto" CACHE STRING "ARM NEON flags (auto|arm64|armv8-neon)")
 set_property(CACHE NEON_FLAGS PROPERTY STRINGS auto arm64 armv8-neon)
@@ -62,10 +70,26 @@ endif()
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(LC REQUIRED libcamera)
 
+# Find JPEG library (optional)
+if(JPEG_ENABLED)
+  find_package(JPEG REQUIRED)
+endif()
+
+# Find EXIF library (optional)
+if(EXIF_ENABLED)
+  pkg_check_modules(EXIF REQUIRED libexif)
+endif()
+
 # Detect Boost program_options (used in rpicam_app)
 find_package(Boost REQUIRED COMPONENTS program_options)
 include_directories(${Boost_INCLUDE_DIRS})
 message(STATUS "Found Boost.ProgramOptions: ${Boost_PROGRAM_OPTIONS_LIBRARY}")
+if(JPEG_ENABLED)
+  message(STATUS "Found JPEG: ${JPEG_LIBRARIES}")
+endif()
+if(EXIF_ENABLED)
+  message(STATUS "Found EXIF: ${EXIF_LIBRARIES}")
+endif()
 
 # -----------------------------------------------------------------------------
 # Include / link settings
@@ -79,6 +103,9 @@ include_directories(
   ${PROJECT_SOURCE_DIR}/preview             # preview headers
   ${PROJECT_SOURCE_DIR}/post_processing_stages # post_processing_stages headers
 )
+if(EXIF_ENABLED)
+  include_directories(${EXIF_INCLUDE_DIRS}) # libexif headers
+endif()
 link_directories(
   ${LC_LIBRARY_DIRS}
 )
@@ -113,6 +140,12 @@ target_link_libraries(rpicam_app_mod PRIVATE
   dl
   ${Boost_PROGRAM_OPTIONS_LIBRARY}
 )
+if(JPEG_ENABLED)
+  target_link_libraries(rpicam_app_mod PRIVATE ${JPEG_LIBRARIES})
+endif()
+if(EXIF_ENABLED)
+  target_link_libraries(rpicam_app_mod PRIVATE ${EXIF_LIBRARIES})
+endif()
 
 # Multi-architecture installation
 install(TARGETS rpicam_app_mod LIBRARY DESTINATION lib)
@@ -139,6 +172,17 @@ if(BUILD_TESTS)
   enable_testing()
   add_executable(test_hal tests/test_hal.cpp ${RPICAM_SRCS})
   target_link_libraries(test_hal PRIVATE ${LC_LIBRARIES})
+  
+  if(JPEG_ENABLED)
+    target_link_libraries(test_hal PRIVATE ${JPEG_LIBRARIES})
+    target_compile_definitions(test_hal PRIVATE HAVE_JPEG)
+  endif()
+
+  if(EXIF_ENABLED)
+    target_link_libraries(test_hal PRIVATE ${EXIF_LIBRARIES})
+    target_compile_definitions(test_hal PRIVATE HAVE_EXIF)
+  endif()
+  
   add_test(NAME hal_test COMMAND test_hal)
 endif()
 

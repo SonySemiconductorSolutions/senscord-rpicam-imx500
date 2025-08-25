@@ -92,11 +92,15 @@ IMX500PostProcessingStage::IMX500PostProcessingStage(RPiCamApp *app)
 	if (device_fd_ < 0)
 		throw std::runtime_error("Cannot open imx500 device node");
 
-	SetInferenceRoiAbs({ 0, 0, 4056, 3040 });
+	SetInferenceRoiAbs({ 0, 0, 4032, 3040 });
 }
 
 IMX500PostProcessingStage::~IMX500PostProcessingStage()
 {
+	progress_thread_running_ = false;
+	if (progress_thread_.joinable())
+		progress_thread_.join();
+
 	if (device_fd_ >= 0)
 		close(device_fd_);
 }
@@ -245,10 +249,10 @@ void IMX500PostProcessingStage::SetInferenceRoiAuto(const unsigned int width, co
 
 void IMX500PostProcessingStage::ShowFwProgressBar()
 {
-	if (fw_progress_.is_open() && fw_progress_chunk_.is_open())
+	if (fw_progress_.is_open() && fw_progress_chunk_.is_open() && !progress_thread_running_)
 	{
-		std::thread progress_thread { &IMX500PostProcessingStage::doProgressBar, this };
-		progress_thread.detach();
+		progress_thread_running_ = true;
+		progress_thread_ = std::thread(&IMX500PostProcessingStage::doProgressBar, this);
 	}
 }
 
@@ -265,10 +269,22 @@ std::vector<unsigned int> split(std::stringstream &stream)
 
 void IMX500PostProcessingStage::doProgressBar()
 {
-	while (1)
+	while (progress_thread_running_)
 	{
 		std::stringstream fw_progress_str, block_str;
-		unsigned int block_progress;
+		unsigned int block_progress = 0;
+
+		if (!fw_progress_.is_open()) {
+			std::cerr << "fw_progress_ not open" << std::endl;
+			break;
+		}
+		if (!fw_progress_chunk_.is_open()) {
+			std::cerr << "fw_progress_chunk_ not open" << std::endl;
+			break;
+		}
+
+		fw_progress_.clear();
+		fw_progress_chunk_.clear();
 
 		fw_progress_.seekg(0);
 		fw_progress_chunk_.seekg(0);
