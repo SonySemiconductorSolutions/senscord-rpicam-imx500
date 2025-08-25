@@ -1089,6 +1089,31 @@ senscord::Status LibcameraAdapter::GetDevices(
   return senscord::Status::OK();
 }
 
+senscord::Status LibcameraAdapter::GetAIModelVersion(std::string &ai_model_version) {
+  std::string j_str = ReadPostProcessJsonString(options_->post_process_file);
+  if (j_str.empty()) {
+    return SENSCORD_STATUS_FAIL("libcamera",
+                              senscord::Status::kCauseNotSupported,
+                              "The json parameter for PostProcess is empty.");
+  }
+
+  std::string file_name;
+  std::string rpk_path = GetRpkPath(j_str);
+  size_t pos = rpk_path.find_last_of("/\\");
+
+  if (pos != std::string::npos) {
+    file_name = rpk_path.substr(pos + 1);
+  } else {
+    file_name = rpk_path;
+  }
+
+  size_t first = file_name.find("_");
+  size_t second = file_name.find("_", first + 1);
+  ai_model_version = file_name.substr(first + 1, second - first - 1);
+
+  return senscord::Status::OK();
+}
+
 senscord::Status LibcameraAdapter::SetControl(
     const senscord::libcamera_image::AccessProperty *property) {
   const libcamera::ControlId *control_id = nullptr;
@@ -1544,7 +1569,8 @@ senscord::Status LibcameraAdapter::ConvertValue(
 }
 
 bool LibcameraAdapter::CheckBundleIdItOnly(const std::string ai_model_bundle_id) {
-  if (ai_model_bundle_id == std::string(AiBundleIdItonly)) {
+  if ((ai_model_bundle_id == std::string(AiBundleIdItonly)) ||
+      (ai_model_bundle_id == std::string(AiBundleIdVgaRgbItonly))) {
     SENSCORD_LOG_INFO(
       "ai_model_bundle_id(%s) is InputTensorOnly pattern.", ai_model_bundle_id.c_str());
     return true;
@@ -1616,29 +1642,21 @@ std::string LibcameraAdapter::ReadPostProcessJsonString(const std::string &post_
   return std::string(buffer.data(), size);
 }
 
-bool LibcameraAdapter::CheckRpkExist(const std::string &post_process_file) {
-  std::string j_str = ReadPostProcessJsonString(post_process_file);
-  if (j_str.empty()) {
-    SENSCORD_LOG_WARNING_TAGGED("libcamera", "The json parameter for PostProcess is empty.");
-    return false;
-  }
-
+std::string LibcameraAdapter::GetRpkPath(const std::string &json_str) {
   nlohmann::json j;
 
   try {
-    j = nlohmann::json::parse(j_str);
+    j = nlohmann::json::parse(json_str);
   } catch (const nlohmann::json::parse_error &e) {
     SENSCORD_LOG_WARNING_TAGGED("libcamera", "Failed to parse json parameter.");
-    return false;
+    return "";
   }
-
 
   if (!(j.contains("imx500_no_process")) || !(j["imx500_no_process"].is_object())) {
     SENSCORD_LOG_WARNING_TAGGED(
         "libcamera",
-        "The key \"imx500_no_process\" does not exist in %s.",
-        post_process_file.c_str());
-    return false;
+        "The key \"imx500_no_process\" does not exist.");
+    return "";
   }
 
   nlohmann::json imx500_no_process_j = j["imx500_no_process"];
@@ -1646,12 +1664,21 @@ bool LibcameraAdapter::CheckRpkExist(const std::string &post_process_file) {
       !(imx500_no_process_j["network_file"].is_string())) {
     SENSCORD_LOG_WARNING_TAGGED(
         "libcamera",
-        "The key \"network_file\" does not exist in %s.",
-        post_process_file.c_str());
+        "The key \"network_file\" does not exist.");
+    return "";
+  }
+
+  return imx500_no_process_j["network_file"];
+}
+
+bool LibcameraAdapter::CheckRpkExist(const std::string &post_process_file) {
+  std::string j_str = ReadPostProcessJsonString(post_process_file);
+  if (j_str.empty()) {
+    SENSCORD_LOG_WARNING_TAGGED("libcamera", "The json parameter for PostProcess is empty.");
     return false;
   }
 
-  std::string rpk_path = imx500_no_process_j["network_file"];
+  std::string rpk_path = GetRpkPath(j_str);
   FILE *f = fopen(rpk_path.c_str(), "rb");
   if (!f) {
     SENSCORD_LOG_WARNING_TAGGED(

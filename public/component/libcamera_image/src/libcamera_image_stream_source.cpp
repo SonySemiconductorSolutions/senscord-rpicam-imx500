@@ -46,6 +46,8 @@ senscord::Status LibcameraImageStreamSource::Open(
   core_ = core;
   util_ = util;
 
+  memset(ai_model_bundle_id_.ai_model_bundle_id, 0, sizeof(char) * kAIModelBundleIdLength);
+
   // register optional properties
   SENSCORD_REGISTER_PROPERTY(util_,
                              senscord::kImageSensorFunctionSupportedPropertyKey,
@@ -572,17 +574,35 @@ senscord::Status LibcameraImageStreamSource::Get(
   SENSCORD_LOG_DEBUG_TAGGED("libcamera",
                             "LibcameraImageStreamSource::Get(libcamera_image::"
                             "InfoStringProperty)");
-  if (property->category == 0x00000000) {
+  if (property->category == INFO_STRING_CATEGORY_SENSOR_NAME) {
     std::string imx500_str = "IMX500";
     strncpy(property->info, imx500_str.c_str(), imx500_str.size());
-  } else if (property->category == 0x00000001) {
+  } else if (property->category == INFO_STRING_CATEGORY_SENSOR_ID) {
     strncpy(property->info, imx500_device_id_.c_str(), imx500_device_id_.length());
     SENSCORD_LOG_INFO("GetProperty device_id: %s", property->info);
-  } else if (property->category == 0x00000002) {
+  } else if (property->category == INFO_STRING_CATEGORY_KEY_GENERATION) {
     strncpy(property->info, "0001", 4);
+  } else if (property->category == INFO_STRING_CATEGORY_FIRMWARE_VERSION) {
+    property->info[0] = '\0';
+  } else if (property->category == INFO_STRING_CATEGORY_LOADER_VERSION) {
+    property->info[0] = '\0';
+  } else if (property->category == INFO_STRING_CATEGORY_AI_MODEL_VERSION) {
+    senscord::Status status;
+    std::string ai_model_version;
+    status = adapter_.GetAIModelVersion(ai_model_version);
+    if (!status.ok()) {
+       util_->SendEventError(status);
+       return status;
+    }
+
+    strncpy(property->info, ai_model_version.c_str(), ai_model_version.length());
+    SENSCORD_LOG_INFO("GetProperty ai_model_version: %s", property->info);
   } else {
-    strncpy(property->info, ai_model_bundle_id_.ai_model_bundle_id,
-            strlen(ai_model_bundle_id_.ai_model_bundle_id));
+    return SENSCORD_STATUS_FAIL(
+        "libcamera", senscord::Status::kCauseNotSupported,
+        "LibcameraImageStreamSource::Get(libcamera_image::"
+        "InfoStringProperty) category(%d) is not supported",
+        property->category);
   }
   return senscord::Status::OK();
 }

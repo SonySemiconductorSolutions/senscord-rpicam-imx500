@@ -17,6 +17,13 @@
 #include "senscord/serialize.h"
 #include "senscord/serialize_buffer.h"
 
+#define INFO_STRING_CATEGORY_SENSOR_NAME (0x00000000)
+#define INFO_STRING_CATEGORY_SENSOR_ID (0x00000001)
+#define INFO_STRING_CATEGORY_KEY_GENERATION (0x00000002)
+#define INFO_STRING_CATEGORY_FIRMWARE_VERSION (0x00010000)
+#define INFO_STRING_CATEGORY_LOADER_VERSION (0x00010001)
+#define INFO_STRING_CATEGORY_AI_MODEL_VERSION (0x00010002)
+
 namespace senscord {
 namespace libcamera_image {
 
