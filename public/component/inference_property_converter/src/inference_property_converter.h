@@ -68,7 +68,9 @@ class InferencePropertyConverterLibrary
       public StructConverterC<senscord_temperature_enable_property_t,
                               TemperatureEnableProperty>,
       public StructConverterC<senscord_input_data_type_property_t,
-                              InputDataTypeProperty> {
+                              InputDataTypeProperty>,
+      public StructConverterC<senscord_camera_auto_exposure_metering_property_t,
+                              CameraAutoExposureMeteringProperty> {
  public:
   virtual ~InferencePropertyConverterLibrary() {}
 
@@ -120,6 +122,7 @@ class InferencePropertyConverterLibrary
   CONVERTER_FUNC(senscord_temperature_enable_property_t,
                  TemperatureEnableProperty);
   CONVERTER_FUNC(senscord_input_data_type_property_t, InputDataTypeProperty);
+  CONVERTER_FUNC(senscord_camera_auto_exposure_metering_property_t, CameraAutoExposureMeteringProperty);
 };
 
 }  // namespace senscord

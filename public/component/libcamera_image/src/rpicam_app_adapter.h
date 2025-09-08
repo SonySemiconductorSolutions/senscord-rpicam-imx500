@@ -22,6 +22,9 @@
 #define IMX500_FULL_RESOLUTION_WIDTH (4056)
 #define IMX500_FULL_RESOLUTION_HEIGHT (3040)
 #define MAX_NUM_DROP_FRAMES (7)
+#define AE_FLICKER_PERIOD_50HZ ("20000us")
+#define AE_FLICKER_PERIOD_60HZ ("16667us")
+
 namespace libcamera {
 class CameraManager;
 class Camera;
@@ -69,6 +72,51 @@ struct CnnInputTensorInfo {
   uint32_t width;
   uint32_t height;
   uint32_t numChannels;
+};
+
+enum ExposureModeParam {
+  kExposureModeParamAuto,
+  kExposureModeParamGainFix,
+  kExposureModeParamTimeFix,
+  kExposureModeParamManual,
+  kExposureModeParamHold,
+};
+
+enum AeAntiFlickerMode {
+  kAeAntiFlickerModeOff,
+  kAeAntiFlickerModeAuto,
+  kAeAntiFlickerModeForce50Hz,
+  kAeAntiFlickerModeForce60Hz,
+};
+
+enum AeMeteringMode {
+  kAeMeteringFullScreen,
+  kAeMeteringUserWindow,
+};
+
+struct AeMeteringWindow {
+  uint32_t top;
+  uint32_t left;
+  uint32_t bottom;
+  uint32_t right;
+};
+
+struct AutoExposureParam {
+  ExposureModeParam mode;
+  uint32_t max_exposure_time;
+  uint32_t min_exposure_time;
+  float max_gain;
+  uint32_t convergence_speed;
+  float ev_compensation;
+  AeAntiFlickerMode anti_flicker_mode;
+  AeMeteringMode metering_mode;
+  AeMeteringWindow window;
+};
+
+struct ManualExposureParam {
+  bool keep;
+  uint32_t exposure_time;
+  float gain;
 };
 
 namespace senscord {
@@ -129,6 +177,20 @@ class LibcameraAdapter {
       const senscord::libcamera_image::AIModelBundleIdProperty *property);
 
   senscord::Status GetAIModelVersion(std::string &ai_model_version);
+  senscord::Status SetExposureMode(ExposureModeParam mode);
+  senscord::Status SetAutoExposureParam(
+      uint32_t &max_exposure_time,
+      uint32_t &min_exposure_time,
+      float &max_gain,
+      uint32_t &convergence_speed);
+  senscord::Status SetAeEvCompensation(float &ev_compensation);
+  senscord::Status SetAeAntiFlickerMode(AeAntiFlickerMode mode);
+  senscord::Status SetAeMetering(
+      AeMeteringMode mode,
+      AeMeteringWindow &window);
+  senscord::Status SetManualExposureParam(
+    uint32_t exposure_time,
+    float gain);
 
   // for internal use
   senscord::Status SetLibcameraControl(
@@ -206,6 +268,8 @@ class LibcameraAdapter {
   std::string device_name_;
   std::string ai_model_bundle_id_;
   int32_t count_drop_frames_;
+  ExposureModeParam exposure_mode_;
+  ManualExposureParam manual_exposure_;
 
   void UpdateTensorShapesProperty(CompletedRequestPtr payload);
 };

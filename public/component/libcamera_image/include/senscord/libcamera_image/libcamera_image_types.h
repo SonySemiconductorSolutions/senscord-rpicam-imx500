@@ -26,10 +26,16 @@ constexpr char kLibcameraAIModelBundleIdPropertyKey[] = "ai_model_bundle_id_prop
 constexpr char kLibcameraInputDataTypePropertyKey[] = "input_data_type_property";
 constexpr char kLibcameraTensorShapesPropertyKey[] = "tensor_shapes_property";
 constexpr char kLibcameraInfoStringPropertyKey[] = "info_string_property";
-
 constexpr char kPostProcessAvailablePropertyKey[] =
     "post_process_available_property";
-
+constexpr char kLibCameraExposureModePropertyKey[] = "camera_exposure_mode_property";
+constexpr char kLibCameraAutoExposurePropertyKey[] = "camera_auto_exposure_property";
+constexpr char kLibCameraEvCompensationPropertyKey[] = "camera_ev_compensation_property";
+constexpr char kLibCameraAntiFlickerModePropertyKey[] =
+    "camera_anti_flicker_mode_property";
+constexpr char kLibCameraAutoExposureMeteringPropertykey[] =
+    "camera_auto_exposure_metering_property";
+constexpr char kLibCameraManualExposurePropertykey[] = "camera_manual_exposure_property";
 ;;
 /**
  * @brief libcamera access property.
@@ -129,7 +135,100 @@ struct PostProcessAvailableProperty {
   SENSCORD_SERIALIZE_DEFINE(is_available)
 };
 
+/**
+ * @brief Property CameraAutoExposureProperty.
+ */
+struct CameraAutoExposureProperty {
+  uint32_t max_exposure_time;
+  uint32_t min_exposure_time;
+  float max_gain;
+  uint32_t convergence_speed;
+
+  SENSCORD_SERIALIZE_DEFINE(max_exposure_time, min_exposure_time, max_gain,
+                            convergence_speed)
+};
+
+/**
+ * @brief Property CameraExposureModeProperty.
+ */
+enum CameraExposureMode {
+  KCameraExposureModeAuto,
+  KCameraExposureModeGainFix,
+  KCameraExposureModeTimeFix,
+  KCameraExposureModeManual,
+  KCameraExposureModeHold,
+};
+
+struct CameraExposureModeProperty {
+  CameraExposureMode mode;
+
+  SENSCORD_SERIALIZE_DEFINE(mode)
+};
+
+/**
+ * @brief Property CameraEvCompensation.
+ */
+struct CameraEvCompensationProperty {
+  float ev_compensation;
+
+  SENSCORD_SERIALIZE_DEFINE(ev_compensation)
+};
+
+/**
+ * @brief Property CameraAntiFlickerModeProperty.
+ */
+enum CameraAntiFlickerMode {
+  kCameraAntiFlickerModeOff,
+  kCameraAntiFlickerModeAuto,
+  kCameraAntiFlickerModeForce50Hz,
+  kCameraAntiFlickerModeForce60Hz,
+};
+
+struct CameraAntiFlickerModeProperty {
+  CameraAntiFlickerMode anti_flicker_mode;
+
+  SENSCORD_SERIALIZE_DEFINE(anti_flicker_mode)
+};
+
+/**
+ * @brief Property CameraAutoExposureMeteringProperty.
+ */
+enum CameraAutoExposureMeteringMode {
+  kCameraAutoExposureMeteringModeFullScreen,
+  kCameraAutoExposureMeteringModeUserWindow,
+};
+
+struct CameraAutoExposureMeteringWindow {
+  uint32_t top;
+  uint32_t left;
+  uint32_t bottom;
+  uint32_t right;
+
+  SENSCORD_SERIALIZE_DEFINE(top, left, bottom, right)
+};
+
+struct CameraAutoExposureMeteringProperty {
+  CameraAutoExposureMeteringMode mode;
+  CameraAutoExposureMeteringWindow window;
+
+  SENSCORD_SERIALIZE_DEFINE(mode, window)
+};
+
+/**
+ * @brief Property CameraManualExposureProperty.
+ */
+struct CameraManualExposureProperty {
+  uint32_t exposure_time;
+  float gain;
+
+  SENSCORD_SERIALIZE_DEFINE(exposure_time, gain)
+};
+
 }  // namespace libcamera_image
 }  // namespace senscord
+
+SENSCORD_SERIALIZE_ADD_ENUM(senscord::libcamera_image::CameraExposureMode)
+SENSCORD_SERIALIZE_ADD_ENUM(senscord::libcamera_image::CameraAntiFlickerMode)
+SENSCORD_SERIALIZE_ADD_ENUM(senscord::libcamera_image::CameraAutoExposureMeteringMode)
 
 #endif
