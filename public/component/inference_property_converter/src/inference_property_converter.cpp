@@ -68,6 +68,7 @@ Status InferencePropertyConverterLibrary::Init(ConverterCollector* collector) {
   AddType(senscord_info_string_property_t, InfoStringProperty);
   AddType(senscord_temperature_enable_property_t, TemperatureEnableProperty);
   AddType(senscord_input_data_type_property_t, InputDataTypeProperty);
+  AddType(senscord_camera_auto_exposure_metering_property_t, CameraAutoExposureMeteringProperty);
   return Status::OK();
 }
 
@@ -240,6 +241,31 @@ Status InferencePropertyConverterLibrary::cxx_to_c(
     senscord_camera_anti_flicker_mode_property_t* dst) {
   dst->anti_flicker_mode =
       static_cast<senscord_camera_anti_flicker_mode>(src.anti_flicker_mode);
+  return Status::OK();
+}
+
+// CameraAutoExposureMeteringProperty
+Status InferencePropertyConverterLibrary::c_to_cxx(
+    const senscord_camera_auto_exposure_metering_property_t& src,
+    CameraAutoExposureMeteringProperty* dst) {
+  dst->mode = static_cast<CameraAutoExposureMeteringMode>(src.mode);
+  dst->window.top = src.window.top;
+  dst->window.left = src.window.left;
+  dst->window.bottom = src.window.bottom;
+  dst->window.right = src.window.right;
+
+  return Status::OK();
+}
+
+Status InferencePropertyConverterLibrary::cxx_to_c(
+    const CameraAutoExposureMeteringProperty& src,
+    senscord_camera_auto_exposure_metering_property_t* dst) {
+  dst->mode = static_cast<senscord_camera_auto_exposure_metering_mode_t>(src.mode);
+  dst->window.top = src.window.top;
+  dst->window.left = src.window.left;
+  dst->window.bottom = src.window.bottom;
+  dst->window.right = src.window.right;
+
   return Status::OK();
 }
 

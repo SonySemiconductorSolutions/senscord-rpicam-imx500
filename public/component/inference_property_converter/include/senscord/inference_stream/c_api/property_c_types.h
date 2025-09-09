@@ -68,6 +68,11 @@ enum senscord_inference_white_balance_mode_t {
   SENSCORD_INFERENCE_WHITE_BALANCE_MODE_HOLD,
 };
 
+enum senscord_camera_auto_exposure_metering_mode_t {
+  SENSCORD_CAMERA_AUTO_EXPOSURE_METERING_MODE_FULL_SCREEN,
+  SENSCORD_CAMERA_AUTO_EXPOSURE_METERING_MODE_USER_WINDOW,
+};
+
 /**
  * ImageRotationProperty
  * @see senscord::kImageRotationPropertyKey
@@ -454,6 +459,22 @@ struct senscord_input_data_type_property_t {
   uint32_t count;
   /** Array of enabled channl. */
   uint32_t channels[SENSCORD_CHANNEL_LIST_MAX];
+};
+
+/**
+ * CameraAutoExposureMeteringProperty
+ * @see senscord::kCameraAutoExposureMeteringPropertyKey
+ */
+#define SENSCORD_CAMERA_AUTO_EXPOSURE_METERING_PROPERTY_KEY \
+  "camera_auto_exposure_metering_property"
+
+/**
+ * CameraAutoExposureMeteringProperty
+ * @see senscord::CameraAutoExposureMeteringProperty
+ */
+struct senscord_camera_auto_exposure_metering_property_t {
+  senscord_camera_auto_exposure_metering_mode_t mode;
+  senscord_rectangle_region_parameter_t window;
 };
 
 #endif /*  SENSCORD_INFERENCE_STREAM_C_API_PROPERTY_C_TYPES_H_ */

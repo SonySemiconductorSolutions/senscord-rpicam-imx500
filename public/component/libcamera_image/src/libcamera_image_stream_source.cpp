@@ -75,10 +75,27 @@ senscord::Status LibcameraImageStreamSource::Open(
   SENSCORD_REGISTER_PROPERTY(
       util_, senscord::libcamera_image::kLibcameraInfoStringPropertyKey,
       senscord::libcamera_image::InfoStringProperty);
-
   SENSCORD_REGISTER_PROPERTY(
       util_, senscord::libcamera_image::kPostProcessAvailablePropertyKey,
       senscord::libcamera_image::PostProcessAvailableProperty);
+  SENSCORD_REGISTER_PROPERTY(
+      util_, senscord::libcamera_image::kLibCameraExposureModePropertyKey,
+      senscord::libcamera_image::CameraExposureModeProperty);
+  SENSCORD_REGISTER_PROPERTY(
+      util_, senscord::libcamera_image::kLibCameraAutoExposurePropertyKey,
+      senscord::libcamera_image::CameraAutoExposureProperty);
+  SENSCORD_REGISTER_PROPERTY(
+      util_, senscord::libcamera_image::kLibCameraEvCompensationPropertyKey,
+      senscord::libcamera_image::CameraEvCompensationProperty);
+  SENSCORD_REGISTER_PROPERTY(
+      util_, senscord::libcamera_image::kLibCameraAntiFlickerModePropertyKey,
+      senscord::libcamera_image::CameraAntiFlickerModeProperty);
+  SENSCORD_REGISTER_PROPERTY(
+      util_, senscord::libcamera_image::kLibCameraAutoExposureMeteringPropertykey,
+      senscord::libcamera_image::CameraAutoExposureMeteringProperty);
+  SENSCORD_REGISTER_PROPERTY(
+      util_, senscord::libcamera_image::kLibCameraManualExposurePropertykey,
+      senscord::libcamera_image::CameraManualExposureProperty);
 
   std::string device = "";
   uint64_t uint_value = 0;
@@ -648,6 +665,288 @@ senscord::Status LibcameraImageStreamSource::Get(
                             "PostProcessAvailableProperty)");
   /*ToDO
     implement channel mask */
+  return senscord::Status::OK();
+}
+
+senscord::Status LibcameraImageStreamSource::Set(
+    const std::string &key,
+    const senscord::libcamera_image::CameraExposureModeProperty *property) {
+  SENSCORD_LOG_DEBUG_TAGGED("libcamera",
+                            "LibcameraImageStreamSource::Set(libcamera_image::"
+                            "CameraExposureModeProperty)");
+  senscord::Status status;
+
+  switch (property->mode) {
+    case KCameraExposureModeAuto:
+      status = adapter_.SetExposureMode(kExposureModeParamAuto);
+      if (!status.ok()) {
+         util_->SendEventError(status);
+         return status;
+      }
+
+      break;
+    case KCameraExposureModeGainFix:
+      status = adapter_.SetExposureMode(kExposureModeParamGainFix);
+      if (!status.ok()) {
+         util_->SendEventError(status);
+         return status;
+      }
+
+      break;
+    case KCameraExposureModeTimeFix:
+      status = adapter_.SetExposureMode(kExposureModeParamTimeFix);
+      if (!status.ok()) {
+         util_->SendEventError(status);
+         return status;
+      }
+
+      break;
+    case KCameraExposureModeManual:
+      status = adapter_.SetExposureMode(kExposureModeParamManual);
+      if (!status.ok()) {
+         util_->SendEventError(status);
+         return status;
+      }
+
+      break;
+    case KCameraExposureModeHold:
+      status = adapter_.SetExposureMode(kExposureModeParamHold);
+      if (!status.ok()) {
+         util_->SendEventError(status);
+         return status;
+      }
+
+      break;
+    default:
+      return SENSCORD_STATUS_FAIL(
+          "libcamera", senscord::Status::kCauseNotSupported,
+          "LibcameraImageStreamSource::Set(libcamera_image::"
+          "CameraExposureModeProperty) mode(%d) is not supported",
+          property->mode);
+  }
+
+  camera_exposure_mode_ = *property;
+
+  return senscord::Status::OK();
+}
+
+senscord::Status LibcameraImageStreamSource::Get(
+    const std::string &key,
+    senscord::libcamera_image::CameraExposureModeProperty *property) {
+  SENSCORD_LOG_DEBUG_TAGGED("libcamera",
+                            "LibcameraImageStreamSource::Get(libcamera_image::"
+                            "CameraExposureModeProperty)");
+  *property = camera_exposure_mode_;
+  return senscord::Status::OK();
+}
+
+senscord::Status LibcameraImageStreamSource::Set(
+    const std::string &key,
+    const senscord::libcamera_image::CameraAutoExposureProperty *property) {
+  SENSCORD_LOG_DEBUG_TAGGED("libcamera",
+                            "LibcameraImageStreamSource::Set(libcamera_image::"
+                            "CameraAutoExposureProperty)");
+  senscord::Status status;
+
+  camera_auto_exposure_ = *property;
+  status = adapter_.SetAutoExposureParam(
+                            camera_auto_exposure_.max_exposure_time,
+                            camera_auto_exposure_.min_exposure_time,
+                            camera_auto_exposure_.max_gain,
+                            camera_auto_exposure_.convergence_speed);
+  if (!status.ok()) {
+    util_->SendEventError(status);
+    return status;
+  }
+
+  return senscord::Status::OK();
+}
+
+senscord::Status LibcameraImageStreamSource::Get(
+    const std::string &key,
+    senscord::libcamera_image::CameraAutoExposureProperty *property) {
+  SENSCORD_LOG_DEBUG_TAGGED("libcamera",
+                            "LibcameraImageStreamSource::Get(libcamera_image::"
+                            "CameraAutoExposureProperty)");
+  *property = camera_auto_exposure_;
+  return senscord::Status::OK();
+}
+
+senscord::Status LibcameraImageStreamSource::Set(
+    const std::string &key,
+    const senscord::libcamera_image::CameraEvCompensationProperty *property) {
+  SENSCORD_LOG_DEBUG_TAGGED("libcamera",
+                            "LibcameraImageStreamSource::Set(libcamera_image::"
+                            "CameraEvCompensationProperty)");
+  senscord::Status status;
+
+  camera_ev_compensation_ = *property;
+
+  status = adapter_.SetAeEvCompensation(camera_ev_compensation_.ev_compensation);
+  if (!status.ok()) {
+    util_->SendEventError(status);
+    return status;
+  }
+
+  return senscord::Status::OK();
+}
+
+senscord::Status LibcameraImageStreamSource::Get(
+    const std::string &key,
+    senscord::libcamera_image::CameraEvCompensationProperty *property) {
+  SENSCORD_LOG_DEBUG_TAGGED("libcamera",
+                            "LibcameraImageStreamSource::Get(libcamera_image::"
+                            "CameraEvCompensationProperty)");
+  *property = camera_ev_compensation_;
+  return senscord::Status::OK();
+}
+
+senscord::Status LibcameraImageStreamSource::Set(
+    const std::string &key,
+    const senscord::libcamera_image::CameraAntiFlickerModeProperty *property) {
+  SENSCORD_LOG_DEBUG_TAGGED("libcamera",
+                            "LibcameraImageStreamSource::Set(libcamera_image::"
+                            "CameraAntiFlickerModeProperty)");
+  senscord::Status status;
+
+  switch (property->anti_flicker_mode) {
+    case kCameraAntiFlickerModeOff:
+      status = adapter_.SetAeAntiFlickerMode(kAeAntiFlickerModeOff);
+      if (!status.ok()) {
+        util_->SendEventError(status);
+        return status;
+      }
+
+      break;
+    case kCameraAntiFlickerModeAuto:
+      status = adapter_.SetAeAntiFlickerMode(kAeAntiFlickerModeAuto);
+      if (!status.ok()) {
+        util_->SendEventError(status);
+        return status;
+      }
+
+      break;
+    case kCameraAntiFlickerModeForce50Hz:
+      status = adapter_.SetAeAntiFlickerMode(kAeAntiFlickerModeForce50Hz);
+      if (!status.ok()) {
+        util_->SendEventError(status);
+        return status;
+      }
+
+      break;
+    case kCameraAntiFlickerModeForce60Hz:
+      status = adapter_.SetAeAntiFlickerMode(kAeAntiFlickerModeForce60Hz);
+      if (!status.ok()) {
+        util_->SendEventError(status);
+        return status;
+      }
+
+      break;
+    default:
+      return SENSCORD_STATUS_FAIL(
+          "libcamera", senscord::Status::kCauseNotSupported,
+          "LibcameraImageStreamSource::Set(libcamera_image::"
+          "CameraAntiFlickerModeProperty) mode(%d) is not supported",
+          property->anti_flicker_mode);
+  }
+
+  camera_anti_flicker_mode_ = *property;
+
+  return senscord::Status::OK();
+}
+
+senscord::Status LibcameraImageStreamSource::Get(
+    const std::string &key,
+    senscord::libcamera_image::CameraAntiFlickerModeProperty *property) {
+  SENSCORD_LOG_DEBUG_TAGGED("libcamera",
+                            "LibcameraImageStreamSource::Get(libcamera_image::"
+                            "CameraAntiFlickerModeProperty)");
+  *property = camera_anti_flicker_mode_;
+  return senscord::Status::OK();
+}
+
+senscord::Status LibcameraImageStreamSource::Set(
+    const std::string &key,
+    const senscord::libcamera_image::CameraManualExposureProperty *property) {
+  SENSCORD_LOG_DEBUG_TAGGED("libcamera",
+                            "LibcameraImageStreamSource::Set(libcamera_image::"
+                            "CameraManualExposureProperty)");
+  senscord::Status status;
+
+  camera_manual_exposure_ = *property;
+  status = adapter_.SetManualExposureParam(
+                    camera_manual_exposure_.exposure_time,
+                    camera_manual_exposure_.gain);
+  if (!status.ok()) {
+    util_->SendEventError(status);
+    return status;
+  }
+
+  return senscord::Status::OK();
+}
+
+senscord::Status LibcameraImageStreamSource::Get(
+    const std::string &key,
+    senscord::libcamera_image::CameraManualExposureProperty *property) {
+  SENSCORD_LOG_DEBUG_TAGGED("libcamera",
+                            "LibcameraImageStreamSource::Get(libcamera_image::"
+                            "CameraManualExposureProperty)");
+  *property = camera_manual_exposure_;
+  return senscord::Status::OK();
+}
+
+senscord::Status LibcameraImageStreamSource::Set(
+    const std::string &key,
+    const senscord::libcamera_image::CameraAutoExposureMeteringProperty *property) {
+  SENSCORD_LOG_DEBUG_TAGGED("libcamera",
+                            "LibcameraImageStreamSource::Set(libcamera_image::"
+                            "CameraAutoExposureMeteringProperty)");
+  senscord::Status status;
+  AeMeteringWindow AeWindow;
+
+  switch (property->mode) {
+    case kCameraAutoExposureMeteringModeFullScreen:
+      status = adapter_.SetAeMetering(kAeMeteringFullScreen, AeWindow);
+      if (!status.ok()) {
+        util_->SendEventError(status);
+        return status;
+      }
+
+      break;
+    case kCameraAutoExposureMeteringModeUserWindow:
+      AeWindow = {
+          property->window.top,
+          property->window.left,
+          property->window.bottom,
+          property->window.right
+      };
+      status = adapter_.SetAeMetering(kAeMeteringUserWindow, AeWindow);
+      if (!status.ok()) {
+        util_->SendEventError(status);
+        return status;
+      }
+
+      break;
+    default:
+      return SENSCORD_STATUS_FAIL(
+          "libcamera", senscord::Status::kCauseNotSupported,
+          "LibcameraImageStreamSource::Set(libcamera_image::"
+          "CameraAutoExposureMeteringProperty) mode(%d) is not supported",
+          property->mode);
+  }
+
+  camera_auto_exposure_metering_ = *property;
+
+  return senscord::Status::OK();
+}
+
+senscord::Status LibcameraImageStreamSource::Get(
+    const std::string &key,
+    senscord::libcamera_image::CameraAutoExposureMeteringProperty *property) {
+  SENSCORD_LOG_DEBUG_TAGGED("libcamera",
+                            "LibcameraImageStreamSource::Get(libcamera_image::"
+                            "CameraAutoExposureMeteringProperty)");
+  *property = camera_auto_exposure_metering_;
   return senscord::Status::OK();
 }
 

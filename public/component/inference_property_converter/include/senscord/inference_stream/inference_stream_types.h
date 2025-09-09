@@ -52,6 +52,11 @@ enum CameraAntiFlickerMode {
   kCameraAntiFlickerModeForce60Hz,
 };
 
+enum CameraAutoExposureMeteringMode {
+  kCameraAutoExposureMeteringModeFullScreen,
+  kCameraAutoExposureMeteringModeUserWindow,
+};
+
 enum InferenceWhiteBalanceMode {
   kInferenceWhiteBalanceModeAuto,
   kInferenceWhiteBalanceModeManualPreset,
@@ -65,6 +70,7 @@ SENSCORD_SERIALIZE_ADD_ENUM(senscord::CameraScalingPolicy)
 SENSCORD_SERIALIZE_ADD_ENUM(senscord::CameraExposureMode)
 SENSCORD_SERIALIZE_ADD_ENUM(senscord::RotationAngle)
 SENSCORD_SERIALIZE_ADD_ENUM(senscord::CameraAntiFlickerMode)
+SENSCORD_SERIALIZE_ADD_ENUM(senscord::CameraAutoExposureMeteringMode)
 SENSCORD_SERIALIZE_ADD_ENUM(senscord::InferenceWhiteBalanceMode)
 
 namespace senscord {
@@ -452,6 +458,28 @@ struct InputDataTypeProperty {
   uint32_t channels[kChannelListMax];
 
   SENSCORD_SERIALIZE_DEFINE(count, channels)
+};
+
+/**
+ * CameraAutoExposureMeteringProperty
+ */
+const char kCameraAutoExposureMeteringPropertyKey[] =
+    "camera_auto_exposure_metering_property";
+
+struct CameraAutoExposureMeteringWindow {
+  uint32_t top;
+  uint32_t left;
+  uint32_t bottom;
+  uint32_t right;
+
+  SENSCORD_SERIALIZE_DEFINE(top, left, bottom, right)
+};
+
+struct CameraAutoExposureMeteringProperty {
+  CameraAutoExposureMeteringMode mode;
+  CameraAutoExposureMeteringWindow window;
+
+  SENSCORD_SERIALIZE_DEFINE(mode, window)
 };
 
 }  // namespace senscord

@@ -313,6 +313,42 @@ class LibcameraImageStreamSource : public senscord::ImageStreamSource {
   senscord::Status Get(
       const std::string& key,
       senscord::libcamera_image::PostProcessAvailableProperty* property);
+  senscord::Status Set(
+      const std::string &key,
+      const senscord::libcamera_image::CameraExposureModeProperty *property);
+  senscord::Status Get(
+      const std::string &key,
+      senscord::libcamera_image::CameraExposureModeProperty *property);
+  senscord::Status Set(
+      const std::string &key,
+      const senscord::libcamera_image::CameraAutoExposureProperty *property);
+  senscord::Status Get(
+      const std::string &key,
+      senscord::libcamera_image::CameraAutoExposureProperty *property);
+  senscord::Status Set(
+      const std::string &key,
+      const senscord::libcamera_image::CameraEvCompensationProperty *property);
+  senscord::Status Get(
+      const std::string &key,
+      senscord::libcamera_image::CameraEvCompensationProperty *property);
+  senscord::Status Set(
+      const std::string &key,
+      const senscord::libcamera_image::CameraAntiFlickerModeProperty *property);
+  senscord::Status Get(
+      const std::string &key,
+      senscord::libcamera_image::CameraAntiFlickerModeProperty *property);
+  senscord::Status Set(
+      const std::string &key,
+      const senscord::libcamera_image::CameraAutoExposureMeteringProperty *property);
+  senscord::Status Get(
+      const std::string &key,
+      senscord::libcamera_image::CameraAutoExposureMeteringProperty *property);
+  senscord::Status Set(
+      const std::string &key,
+      const senscord::libcamera_image::CameraManualExposureProperty *property);
+  senscord::Status Get(
+      const std::string &key,
+      senscord::libcamera_image::CameraManualExposureProperty *property);
 
  private:
   bool GetDeviceID(void);
@@ -330,6 +366,12 @@ class LibcameraImageStreamSource : public senscord::ImageStreamSource {
   uint32_t display_channel_;
   std::string imx500_device_id_;
   std::mutex device_id_mutex_;
+  CameraExposureModeProperty camera_exposure_mode_;
+  CameraAutoExposureProperty camera_auto_exposure_;
+  CameraEvCompensationProperty camera_ev_compensation_;
+  CameraAntiFlickerModeProperty camera_anti_flicker_mode_;
+  CameraManualExposureProperty camera_manual_exposure_;
+  CameraAutoExposureMeteringProperty camera_auto_exposure_metering_;
 };
 
 }  // namespace libcamera_image

@@ -94,6 +94,10 @@ senscord::Status LibcameraAdapter::Open(
     senscord::ImageProperty &image_property) {
   std::lock_guard<std::mutex> lock(LibcameraAdapter::mutex_camera_manager_);
 
+  exposure_mode_ = kExposureModeParamAuto;
+  manual_exposure_.keep = false;
+  manual_exposure_.exposure_time = 0;
+  manual_exposure_.gain = 0.0;
   util_ = util;
   device_name_ = device_name;
   libcam_ = new RPiCamApp();
@@ -1110,6 +1114,123 @@ senscord::Status LibcameraAdapter::GetAIModelVersion(std::string &ai_model_versi
   size_t first = file_name.find("_");
   size_t second = file_name.find("_", first + 1);
   ai_model_version = file_name.substr(first + 1, second - first - 1);
+
+  return senscord::Status::OK();
+}
+
+senscord::Status LibcameraAdapter::SetExposureMode(ExposureModeParam mode) {
+  senscord::Status status;
+
+  switch (mode) {
+    case kExposureModeParamAuto:
+      options_->exposure_index = 0;
+      manual_exposure_.keep = false;
+      break;
+    case kExposureModeParamGainFix:
+      return SENSCORD_STATUS_FAIL("libcamera",
+                              senscord::Status::kCauseNotSupported,
+                              "ExposureModeGainFix is not supported.");
+    case kExposureModeParamTimeFix:
+      return SENSCORD_STATUS_FAIL("libcamera",
+                              senscord::Status::kCauseNotSupported,
+                              "ExposureModeTimeFix is not supported.");
+    case kExposureModeParamManual:
+      options_->exposure_index = 4;
+      break;
+    case kExposureModeParamHold:
+      /* Check if the previous value is retained. */
+      if (manual_exposure_.keep) {
+        options_->exposure_index = 4;
+
+        /* Set the previous value. */
+        status = SetManualExposureParam(
+              manual_exposure_.exposure_time,
+              manual_exposure_.gain);
+        if (!status.ok()) {
+          return status;
+        }
+      } else {
+        return SENSCORD_STATUS_FAIL("libcamera",
+                              senscord::Status::kCauseInvalidOperation,
+                              "ManualExposure was not executed previously.");
+      }
+
+      break;
+    default:
+      return SENSCORD_STATUS_FAIL("libcamera",
+                              senscord::Status::kCauseNotSupported,
+                              "mode(%d) is not supported.", mode);
+  }
+
+  exposure_mode_ = mode;
+
+  return senscord::Status::OK();
+}
+
+senscord::Status LibcameraAdapter::SetAutoExposureParam(
+    uint32_t &max_exposure_time,
+    uint32_t &min_exposure_time,
+    float &max_gain,
+    uint32_t &convergence_speed) {
+  /* There is no interface for configuring it in libcamera. */
+  return SENSCORD_STATUS_FAIL("libcamera",
+                          senscord::Status::kCauseNotSupported,
+                          "The AutoExposure parameter is not supported.");
+}
+
+senscord::Status LibcameraAdapter::SetAeEvCompensation(
+    float &ev_compensation) {
+  options_->ev = ev_compensation;
+  return senscord::Status::OK();
+}
+
+senscord::Status LibcameraAdapter::SetAeAntiFlickerMode(
+    AeAntiFlickerMode mode) {
+  switch (mode) {
+    case kAeAntiFlickerModeOff:
+      options_->flicker_period.set("0us");
+      break;
+    case kAeAntiFlickerModeAuto:
+      return SENSCORD_STATUS_FAIL("libcamera",
+                              senscord::Status::kCauseNotSupported,
+                              "mode(%d) is not supported.", mode);
+
+    case kAeAntiFlickerModeForce50Hz:
+      options_->flicker_period.set(AE_FLICKER_PERIOD_50HZ);
+      break;
+    case kAeAntiFlickerModeForce60Hz:
+      options_->flicker_period.set(AE_FLICKER_PERIOD_60HZ);
+      break;
+    default:
+      return SENSCORD_STATUS_FAIL("libcamera",
+                              senscord::Status::kCauseNotSupported,
+                              "mode(%d) is not supported.", mode);
+  }
+
+  return senscord::Status::OK();
+}
+
+senscord::Status LibcameraAdapter::SetAeMetering(
+    AeMeteringMode mode,
+    AeMeteringWindow &window) {
+  /* There is no interface for configuring it in libcamera. */
+    return SENSCORD_STATUS_FAIL("libcamera",
+                          senscord::Status::kCauseNotSupported,
+                          "The AeMetering parameter is not supported.");
+}
+
+senscord::Status LibcameraAdapter::SetManualExposureParam(
+    uint32_t exposure_time,
+    float gain) {
+  if (options_->exposure_index == 4) {
+    std::string shutter_str = std::to_string(exposure_time) + "us";
+    options_->shutter.set(shutter_str);
+    options_->gain = gain;
+
+    manual_exposure_.keep = true;
+    manual_exposure_.exposure_time = exposure_time;
+    manual_exposure_.gain = gain;
+  }
 
   return senscord::Status::OK();
 }
