@@ -256,6 +256,14 @@ senscord::Status LibcameraAdapter::Open(
       camera_ = *result;
     }
   }
+
+  status = reg_handle_.Open();
+  if (!status.ok()) {
+    SENSCORD_LOG_ERROR_TAGGED("libcamera",
+      "Failed to open image sensor register control.");
+    return status;
+  }
+
   SENSCORD_LOG_INFO_TAGGED("libcamera", "libcamera::Camera(%s) : \"%s\"",
                            device_name.c_str(), camera_->id().c_str());
   return senscord::Status::OK();
@@ -357,6 +365,7 @@ senscord::Status LibcameraAdapter::Close() {
     libcam_->CloseCamera();
   }
   delete libcam_;
+  reg_handle_.Close();
   return senscord::Status::OK();
 }
 
@@ -1018,6 +1027,44 @@ senscord::Status LibcameraAdapter::SetProperty(
         "The set ai_model_bundle_id(%s) is invalid.",
         bundle_id.c_str());
   }
+
+  return senscord::Status::OK();
+}
+
+senscord::Status LibcameraAdapter::GetProperty(
+    senscord::libcamera_image::CameraTemperatureProperty *property) {
+  senscord::Status status;
+  uint8_t reg_value = 0;
+  int8_t temp_value = 0;
+
+  status = reg_handle_.ReadRegister(kRegTemperatureEnable, &reg_value);
+  if (!status.ok()) {
+    return SENSCORD_STATUS_FAIL("libcamera", senscord::Status::kCauseHardwareError,
+                                "Failed to read temperature enable register");
+  }
+  if ((reg_value & kRegTemperatureEnableMask) == 0) {
+    return SENSCORD_STATUS_FAIL(
+        "libcamera", senscord::Status::kCauseInvalidOperation,
+        "Temperature measurement is disabled");
+  }
+
+  status = reg_handle_.ReadRegister(kRegTemperatureValue, &reg_value);
+  if (!status.ok()) {
+    return SENSCORD_STATUS_FAIL("libcamera", senscord::Status::kCauseHardwareError,
+                                "Failed to read temperature value register");
+  }
+  temp_value = static_cast<int8_t>(reg_value);
+  if (temp_value < kRegTemperatureMin) {
+    SENSCORD_LOG_INFO("Temperature is under range[%d]", temp_value);
+    temp_value = kRegTemperatureMin;
+  } else if (temp_value > kRegTemperatureMax) {
+    SENSCORD_LOG_INFO("Temperature is over range[%d]", temp_value);
+    temp_value = kRegTemperatureMax;
+  }
+  // Only use Sensor-ID : 0 (IMX500 sensor celsius)
+  property->temperatures[kImx500SensorId] = {static_cast<float>(temp_value), "IMX500 sensor celsius"};
+
+  SENSCORD_LOG_INFO("Temperature: [%d/%f]", temp_value, property->temperatures[kImx500SensorId].temperature);
 
   return senscord::Status::OK();
 }

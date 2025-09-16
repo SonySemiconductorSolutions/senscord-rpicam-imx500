@@ -67,6 +67,7 @@ Status InferencePropertyConverterLibrary::Init(ConverterCollector* collector) {
           ManualWhiteBalanceGainProperty);
   AddType(senscord_info_string_property_t, InfoStringProperty);
   AddType(senscord_temperature_enable_property_t, TemperatureEnableProperty);
+  AddType(senscord_temperature_property_t, TemperatureProperty);
   AddType(senscord_input_data_type_property_t, InputDataTypeProperty);
   AddType(senscord_camera_auto_exposure_metering_property_t, CameraAutoExposureMeteringProperty);
   return Status::OK();
@@ -452,6 +453,39 @@ Status InferencePropertyConverterLibrary::cxx_to_c(
     dst->temperatures[i].sensor_id = src.temperatures[i].sensor_id;
     dst->temperatures[i].enable    = src.temperatures[i].enable;
   }
+  return Status::OK();
+}
+
+// TemperatureProperty
+Status InferencePropertyConverterLibrary::c_to_cxx(
+    const senscord_temperature_property_t& src,
+    TemperatureProperty* dst) {
+  uint32_t id;
+  TemperatureInfo temp_info;
+  dst->temperatures.clear();
+  for (uint32_t i = 0; i < src.count; ++i) {
+    id = src.temperatures[i].sensor_id;
+    temp_info.temperature = src.temperatures[i].temperature;
+    temp_info.description = src.temperatures[i].description;
+    dst->temperatures[id] = temp_info;
+  }
+  return Status::OK();
+}
+
+Status InferencePropertyConverterLibrary::cxx_to_c(
+    const TemperatureProperty& src,
+    senscord_temperature_property_t* dst) {
+  uint32_t i = 0;
+  for (const auto& it : src.temperatures) {
+    if (i >= kTemperatureListMax) {
+      break;
+    }
+    dst->temperatures[i].sensor_id = it.first;
+    dst->temperatures[i].temperature = it.second.temperature;
+    StrCpyToCharArray(dst->temperatures[i].description, it.second.description.c_str());
+    ++i;
+  }
+  dst->count = i;
   return Status::OK();
 }
 

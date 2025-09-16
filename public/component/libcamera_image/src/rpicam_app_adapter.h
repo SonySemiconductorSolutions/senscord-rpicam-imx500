@@ -16,6 +16,8 @@
 #include "core/options.hpp"
 #include "core/rpicam_app.hpp"
 #include "senscord/libcamera_image/libcamera_image_types.h"
+#include "libcamera_image_sensor_register.h"
+
 #define AITRIOS_SENSOR_CHANNEL_ID_INFERENCE_OUTPUT (0x00000000)
 #define AITRIOS_SENSOR_CHANNEL_ID_INFERENCE_INPUT_IMAGE (0x00000001)
 #define AITRIOS_SENSOR_CHANNEL_ID_INFERENCE_RAW_IMAGE (0x80000000)
@@ -175,6 +177,8 @@ class LibcameraAdapter {
       senscord::libcamera_image::CameraImageFlipProperty *property);
   senscord::Status SetProperty(
       const senscord::libcamera_image::AIModelBundleIdProperty *property);
+  senscord::Status GetProperty(
+      senscord::libcamera_image::CameraTemperatureProperty *property);
 
   senscord::Status GetAIModelVersion(std::string &ai_model_version);
   senscord::Status SetExposureMode(ExposureModeParam mode);
@@ -234,6 +238,7 @@ class LibcameraAdapter {
   bool CheckRpkExist(const std::string &post_process_file);
 
  private:
+  static const uint8_t kImx500SensorId = 0;  // IMX500 sensor celsius
   static std::unique_ptr<libcamera::CameraManager> camera_manager_;
   static std::mutex mutex_camera_manager_;
   static size_t camera_manager_ref_count_;
@@ -270,6 +275,7 @@ class LibcameraAdapter {
   int32_t count_drop_frames_;
   ExposureModeParam exposure_mode_;
   ManualExposureParam manual_exposure_;
+  senscord::libcamera_image::SensorRegister reg_handle_;
 
   void UpdateTensorShapesProperty(CompletedRequestPtr payload);
 };

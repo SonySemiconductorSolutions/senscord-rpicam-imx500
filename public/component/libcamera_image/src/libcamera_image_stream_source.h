@@ -349,6 +349,12 @@ class LibcameraImageStreamSource : public senscord::ImageStreamSource {
   senscord::Status Get(
       const std::string &key,
       senscord::libcamera_image::CameraManualExposureProperty *property);
+  senscord::Status Set(
+      const std::string &key,
+      const senscord::libcamera_image::CameraTemperatureProperty *property);
+  senscord::Status Get(
+      const std::string &key,
+      senscord::libcamera_image::CameraTemperatureProperty *property);
 
  private:
   bool GetDeviceID(void);
