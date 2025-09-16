@@ -36,6 +36,7 @@ constexpr char kLibCameraAntiFlickerModePropertyKey[] =
 constexpr char kLibCameraAutoExposureMeteringPropertykey[] =
     "camera_auto_exposure_metering_property";
 constexpr char kLibCameraManualExposurePropertykey[] = "camera_manual_exposure_property";
+constexpr char kLibcameraTemperaturePropertyKey[] = "temperature_property";
 ;;
 /**
  * @brief libcamera access property.
@@ -222,6 +223,26 @@ struct CameraManualExposureProperty {
   float gain;
 
   SENSCORD_SERIALIZE_DEFINE(exposure_time, gain)
+};
+
+/**
+ * @brief Property for the temperature information.
+ */
+struct TemperatureInfo {
+  float temperature;         /**< Temperature data. */
+  std::string description;   /**< Description of sensor. */
+
+  SENSCORD_SERIALIZE_DEFINE(temperature, description)
+};
+
+/**
+ * @brief Property for the temperature.
+ */
+struct CameraTemperatureProperty {
+  /** Information for each temperature sensor. (Key = Sensor id) */
+  std::map<uint32_t, TemperatureInfo> temperatures;
+
+  SENSCORD_SERIALIZE_DEFINE(temperatures)
 };
 
 }  // namespace libcamera_image

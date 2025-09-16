@@ -96,6 +96,9 @@ senscord::Status LibcameraImageStreamSource::Open(
   SENSCORD_REGISTER_PROPERTY(
       util_, senscord::libcamera_image::kLibCameraManualExposurePropertykey,
       senscord::libcamera_image::CameraManualExposureProperty);
+  SENSCORD_REGISTER_PROPERTY(
+      util_, senscord::libcamera_image::kLibcameraTemperaturePropertyKey,
+      senscord::libcamera_image::CameraTemperatureProperty);
 
   std::string device = "";
   uint64_t uint_value = 0;
@@ -948,6 +951,27 @@ senscord::Status LibcameraImageStreamSource::Get(
                             "CameraAutoExposureMeteringProperty)");
   *property = camera_auto_exposure_metering_;
   return senscord::Status::OK();
+}
+
+senscord::Status LibcameraImageStreamSource::Set(
+    const std::string &key,
+    const senscord::libcamera_image::CameraTemperatureProperty *property) {
+  SENSCORD_LOG_DEBUG_TAGGED("libcamera",
+                            "LibcameraImageStreamSource::Set(libcamera_image::"
+                            "CameraTemperatureProperty)");
+  return SENSCORD_STATUS_FAIL(
+      "libcamera", senscord::Status::kCauseNotSupported,
+      "LibcameraImageStreamSource::Set(libcamera_image::"
+      "CameraTemperatureProperty) is not supported");
+}
+
+senscord::Status LibcameraImageStreamSource::Get(
+    const std::string &key,
+    senscord::libcamera_image::CameraTemperatureProperty *property) {
+  SENSCORD_LOG_DEBUG_TAGGED("libcamera",
+                            "LibcameraImageStreamSource::Get(libcamera_image::"
+                            "CameraTemperatureProperty)");
+  return adapter_.GetProperty(property);
 }
 
 bool LibcameraImageStreamSource::GetDeviceID(void) {

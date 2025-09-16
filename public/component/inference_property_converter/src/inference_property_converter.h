@@ -67,6 +67,8 @@ class InferencePropertyConverterLibrary
                               InfoStringProperty>,
       public StructConverterC<senscord_temperature_enable_property_t,
                               TemperatureEnableProperty>,
+      public StructConverterC<senscord_temperature_property_t,
+                              TemperatureProperty>,
       public StructConverterC<senscord_input_data_type_property_t,
                               InputDataTypeProperty>,
       public StructConverterC<senscord_camera_auto_exposure_metering_property_t,
@@ -121,6 +123,7 @@ class InferencePropertyConverterLibrary
   CONVERTER_FUNC(senscord_info_string_property_t, InfoStringProperty);
   CONVERTER_FUNC(senscord_temperature_enable_property_t,
                  TemperatureEnableProperty);
+  CONVERTER_FUNC(senscord_temperature_property_t, TemperatureProperty);
   CONVERTER_FUNC(senscord_input_data_type_property_t, InputDataTypeProperty);
   CONVERTER_FUNC(senscord_camera_auto_exposure_metering_property_t, CameraAutoExposureMeteringProperty);
 };
