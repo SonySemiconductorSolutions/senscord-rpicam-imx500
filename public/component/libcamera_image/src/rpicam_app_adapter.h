@@ -13,6 +13,7 @@
 #include <string>
 #include <vector>
 
+#include "v4l2_ctrl_manager.h"
 #include "core/options.hpp"
 #include "core/rpicam_app.hpp"
 #include "senscord/libcamera_image/libcamera_image_types.h"
@@ -26,6 +27,10 @@
 #define MAX_NUM_DROP_FRAMES (7)
 #define AE_FLICKER_PERIOD_50HZ ("20000us")
 #define AE_FLICKER_PERIOD_60HZ ("16667us")
+#define CAMERA_IMAGE_WIDTH_DEFAULT (4056) /* pixel */
+#define CAMERA_IMAGE_HEIGHT_DEFAULT (3040) /* pixel */
+#define CAMERA_FRAME_RATE_DEFAULT (10.f) /* fps */
+#define CAMERA_FRAME_RATE_DENOM_DEFAULT (1.001f)
 
 namespace libcamera {
 class CameraManager;
@@ -121,6 +126,18 @@ struct ManualExposureParam {
   float gain;
 };
 
+struct ImageFlip {
+  bool h;
+  bool v;
+};
+
+struct ImageCrop {
+  uint32_t x;
+  uint32_t y;
+  uint32_t w;
+  uint32_t h;
+};
+
 namespace senscord {
 
 class Status;
@@ -129,7 +146,6 @@ class FrameInfo;
 class ImageSensorFunctionSupportedProperty;
 class StreamSourceUtility;
 class ImageRotationProperty;
-class ImageCropProperty;
 class CameraImageFlipProperty;
 
 namespace libcamera_image {
@@ -165,8 +181,6 @@ class LibcameraAdapter {
       senscord::libcamera_image::DeviceEnumerationProperty *property);
   senscord::Status SetControl(
       const senscord::libcamera_image::AccessProperty *property);
-  senscord::Status SetProperty(const senscord::ImageCropProperty *property);
-  senscord::Status GetProperty(senscord::ImageCropProperty *property);
   senscord::Status SetProperty(
       const senscord::libcamera_image::ImageRotationProperty *property);
   senscord::Status GetProperty(
@@ -193,8 +207,18 @@ class LibcameraAdapter {
       AeMeteringMode mode,
       AeMeteringWindow &window);
   senscord::Status SetManualExposureParam(
-    uint32_t exposure_time,
-    float gain);
+      uint32_t exposure_time,
+      float gain);
+  senscord::Status SetImageSize(uint32_t width, uint32_t height);
+  senscord::Status SetFrameRate(uint32_t num, uint32_t denom);
+  senscord::Status SetImageFlip(
+    bool flip_horizontal,
+    bool flip_vertical);
+  senscord::Status SetImageCrop(
+      uint32_t left,
+      uint32_t top,
+      uint32_t width,
+      uint32_t height);
 
   // for internal use
   senscord::Status SetLibcameraControl(
@@ -225,6 +249,8 @@ class LibcameraAdapter {
   senscord::Status ConvertValue(const libcamera::ControlType type,
                                 const libcamera::ControlValue &target_value,
                                 senscord::libcamera_image::AnyValue &value);
+  bool GetDeviceID(std::string &device_id_str);
+
  private:
   bool CheckBundleIdItOnly(const std::string ai_model_bundle_id);
   std::string ReplaceCustomJsonPathString(
@@ -236,6 +262,7 @@ class LibcameraAdapter {
   std::string ReadPostProcessJsonString(const std::string &post_process_file);
   std::string GetRpkPath(const std::string &json_str);
   bool CheckRpkExist(const std::string &post_process_file);
+  bool UpdateImageCrop(void);
 
  private:
   static const uint8_t kImx500SensorId = 0;  // IMX500 sensor celsius
@@ -260,7 +287,6 @@ class LibcameraAdapter {
   senscord::ImageProperty *it_image_property_;
   senscord::ImageProperty *full_image_property_;
   void InitializeOptions(Options *&options);
-  senscord::ImageCropProperty crop_property_;
   senscord::libcamera_image::ImageRotationProperty rotation_property_;
   senscord::libcamera_image::CameraImageFlipProperty flip_property_;
   senscord::libcamera_image::TensorShapesProperty tensor_shapes_property_;
@@ -276,8 +302,14 @@ class LibcameraAdapter {
   ExposureModeParam exposure_mode_;
   ManualExposureParam manual_exposure_;
   senscord::libcamera_image::SensorRegister reg_handle_;
+  uint32_t camera_image_width_;
+  uint32_t camera_image_height_;
+  float camera_frame_rate_;
+  ImageFlip image_flip_;
+  ImageCrop image_crop_;
 
   void UpdateTensorShapesProperty(CompletedRequestPtr payload);
+  void UpdateImageRotationProperty(void);
 };
 
 }  // namespace libcamera_image

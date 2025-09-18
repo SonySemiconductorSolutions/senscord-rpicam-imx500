@@ -25,6 +25,7 @@ SensorRegister::~SensorRegister() {
 }
 
 senscord::Status SensorRegister::Open(void) {
+  std::lock_guard<std::mutex> lock(mutex_access_);
   if (handle_ != -1) {
     return senscord::Status::OK();  // Already opened
   }
@@ -54,6 +55,7 @@ senscord::Status SensorRegister::Open(void) {
 }
 
 senscord::Status SensorRegister::Close(void) {
+  std::lock_guard<std::mutex> lock(mutex_access_);
   if (handle_ != -1) {
     int ret = close(handle_);
     if (ret < 0) {
@@ -70,6 +72,7 @@ senscord::Status SensorRegister::Close(void) {
 
 senscord::Status SensorRegister::ReadRegister(
   const uint16_t reg, uint8_t* value, size_t len) {
+  std::lock_guard<std::mutex> lock(mutex_access_);
   if (IsNotOpen()) {
     return SENSCORD_STATUS_FAIL(
             "libcamera", senscord::Status::kCauseInvalidOperation,
@@ -112,6 +115,7 @@ senscord::Status SensorRegister::ReadRegister(
 
 senscord::Status SensorRegister::WriteRegister(
   const uint16_t reg, const uint8_t* value, size_t len) {
+  std::lock_guard<std::mutex> lock(mutex_access_);
   if (IsNotOpen()) {
     return SENSCORD_STATUS_FAIL(
             "libcamera", senscord::Status::kCauseInvalidOperation,

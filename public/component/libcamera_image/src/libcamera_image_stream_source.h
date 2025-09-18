@@ -355,6 +355,18 @@ class LibcameraImageStreamSource : public senscord::ImageStreamSource {
   senscord::Status Get(
       const std::string &key,
       senscord::libcamera_image::CameraTemperatureProperty *property);
+  senscord::Status Set(
+      const std::string &key,
+      const senscord::libcamera_image::CameraImageSizeProperty *property);
+  senscord::Status Get(
+      const std::string &key,
+      senscord::libcamera_image::CameraImageSizeProperty *property);
+  senscord::Status Set(
+      const std::string &key,
+      const senscord::libcamera_image::CameraFrameRateProperty *property);
+  senscord::Status Get(
+      const std::string &key,
+      senscord::libcamera_image::CameraFrameRateProperty *property);
 
  private:
   bool GetDeviceID(void);
@@ -367,7 +379,6 @@ class LibcameraImageStreamSource : public senscord::ImageStreamSource {
   // properties
   senscord::FrameRateProperty framerate_property_;
   senscord::ImageProperty image_property_;
-  senscord::ImageCropProperty crop_property_;
   senscord::libcamera_image::AIModelBundleIdProperty ai_model_bundle_id_;
   uint32_t display_channel_;
   std::string imx500_device_id_;
@@ -378,6 +389,10 @@ class LibcameraImageStreamSource : public senscord::ImageStreamSource {
   CameraAntiFlickerModeProperty camera_anti_flicker_mode_;
   CameraManualExposureProperty camera_manual_exposure_;
   CameraAutoExposureMeteringProperty camera_auto_exposure_metering_;
+  CameraImageFlipProperty camera_image_flip_;
+  CameraImageSizeProperty camera_image_size_;
+  CameraFrameRateProperty camera_frame_rate_;
+  ImageCropProperty image_crop_;
 };
 
 }  // namespace libcamera_image

@@ -19,6 +19,7 @@
 #include <fcntl.h>
 
 #include "rpicam_app_adapter.h"
+#include "v4l2_ctrl_manager.h"
 #include "senscord/logger.h"
 #include "senscord/status.h"
 
@@ -79,26 +80,32 @@ senscord::Status LibcameraImageStreamSource::Open(
       util_, senscord::libcamera_image::kPostProcessAvailablePropertyKey,
       senscord::libcamera_image::PostProcessAvailableProperty);
   SENSCORD_REGISTER_PROPERTY(
-      util_, senscord::libcamera_image::kLibCameraExposureModePropertyKey,
+      util_, senscord::libcamera_image::kLibcameraCameraExposureModePropertyKey,
       senscord::libcamera_image::CameraExposureModeProperty);
   SENSCORD_REGISTER_PROPERTY(
-      util_, senscord::libcamera_image::kLibCameraAutoExposurePropertyKey,
+      util_, senscord::libcamera_image::kLibcameraCameraAutoExposurePropertyKey,
       senscord::libcamera_image::CameraAutoExposureProperty);
   SENSCORD_REGISTER_PROPERTY(
-      util_, senscord::libcamera_image::kLibCameraEvCompensationPropertyKey,
+      util_, senscord::libcamera_image::kLibcameraCameraEvCompensationPropertyKey,
       senscord::libcamera_image::CameraEvCompensationProperty);
   SENSCORD_REGISTER_PROPERTY(
-      util_, senscord::libcamera_image::kLibCameraAntiFlickerModePropertyKey,
+      util_, senscord::libcamera_image::kLibcameraCameraAntiFlickerModePropertyKey,
       senscord::libcamera_image::CameraAntiFlickerModeProperty);
   SENSCORD_REGISTER_PROPERTY(
-      util_, senscord::libcamera_image::kLibCameraAutoExposureMeteringPropertykey,
+      util_, senscord::libcamera_image::kLibcameraCameraAutoExposureMeteringPropertykey,
       senscord::libcamera_image::CameraAutoExposureMeteringProperty);
   SENSCORD_REGISTER_PROPERTY(
-      util_, senscord::libcamera_image::kLibCameraManualExposurePropertykey,
+      util_, senscord::libcamera_image::kLibcameraCameraManualExposurePropertykey,
       senscord::libcamera_image::CameraManualExposureProperty);
   SENSCORD_REGISTER_PROPERTY(
       util_, senscord::libcamera_image::kLibcameraTemperaturePropertyKey,
       senscord::libcamera_image::CameraTemperatureProperty);
+  SENSCORD_REGISTER_PROPERTY(
+      util_, senscord::libcamera_image::kLibcameraCameraImageSizePropertykey,
+      senscord::libcamera_image::CameraImageSizeProperty);
+  SENSCORD_REGISTER_PROPERTY(
+      util_, senscord::libcamera_image::kLibcameraCameraFrameRatePropertykey,
+      senscord::libcamera_image::CameraFrameRateProperty);
 
   std::string device = "";
   uint64_t uint_value = 0;
@@ -399,15 +406,28 @@ senscord::Status LibcameraImageStreamSource::Get(
     const std::string &key, senscord::ImageCropProperty *property) {
   SENSCORD_LOG_DEBUG_TAGGED(
       "libcamera", "LibcameraImageStreamSource::Get(ImageCropProperty)");
-  return adapter_.GetProperty(property);
+  *property = image_crop_;
+  return senscord::Status::OK();
 }
 
 senscord::Status LibcameraImageStreamSource::Set(
     const std::string &key, const senscord::ImageCropProperty *property) {
   SENSCORD_LOG_DEBUG_TAGGED(
       "libcamera", "LibcameraImageStreamSource::Set(ImageCropProperty)");
-  return adapter_.SetProperty(property);
-  ;
+  senscord::Status status;
+
+  image_crop_ = *property;
+  status = adapter_.SetImageCrop(
+                            image_crop_.left,
+                            image_crop_.top,
+                            image_crop_.width,
+                            image_crop_.height);
+  if (!status.ok()) {
+    util_->SendEventError(status);
+    return status;
+  }
+
+  return senscord::Status::OK();
 }
 
 senscord::Status LibcameraImageStreamSource::Get(
@@ -531,7 +551,19 @@ senscord::Status LibcameraImageStreamSource::Set(
   SENSCORD_LOG_DEBUG_TAGGED("libcamera",
                             "LibcameraImageStreamSource::Set(libcamera_image::"
                             "CameraImageFlipProperty)");
-  return adapter_.SetProperty(property);
+  senscord::Status status;
+
+  camera_image_flip_ = *property;
+  status = adapter_.SetImageFlip(
+                    camera_image_flip_.flip_horizontal,
+                    camera_image_flip_.flip_vertical);
+
+  if (!status.ok()) {
+    util_->SendEventError(status);
+    return status;
+  }
+
+  return senscord::Status::OK();
 }
 
 senscord::Status LibcameraImageStreamSource::Get(
@@ -540,13 +572,8 @@ senscord::Status LibcameraImageStreamSource::Get(
   SENSCORD_LOG_DEBUG_TAGGED("libcamera",
                             "LibcameraImageStreamSource::Get(libcamera_image::"
                             "CameraImageFlipProperty)");
-  senscord::Status status;
-  status = adapter_.GetProperty(property);
-  if (!status.ok()) {
-    util_->SendEventError(status);
-  }
-
-  return status;
+  *property = camera_image_flip_;
+  return senscord::Status::OK();
 }
 
 senscord::Status LibcameraImageStreamSource::Set(
@@ -974,6 +1001,66 @@ senscord::Status LibcameraImageStreamSource::Get(
   return adapter_.GetProperty(property);
 }
 
+senscord::Status LibcameraImageStreamSource::Set(
+    const std::string &key,
+    const senscord::libcamera_image::CameraImageSizeProperty *property) {
+  SENSCORD_LOG_DEBUG_TAGGED("libcamera",
+                            "LibcameraImageStreamSource::Set(libcamera_image::"
+                            "CameraImageSizeProperty)");
+  senscord::Status status;
+
+  camera_image_size_ = *property;
+  status = adapter_.SetImageSize(
+                    camera_image_size_.width,
+                    camera_image_size_.height);
+  if (!status.ok()) {
+    util_->SendEventError(status);
+    return status;
+  }
+
+  return senscord::Status::OK();
+}
+
+senscord::Status LibcameraImageStreamSource::Get(
+    const std::string &key,
+    senscord::libcamera_image::CameraImageSizeProperty *property) {
+  SENSCORD_LOG_DEBUG_TAGGED("libcamera",
+                            "LibcameraImageStreamSource::Get(libcamera_image::"
+                            "CameraImageSizeProperty)");
+  *property = camera_image_size_;
+  return senscord::Status::OK();
+}
+
+senscord::Status LibcameraImageStreamSource::Set(
+    const std::string &key,
+    const senscord::libcamera_image::CameraFrameRateProperty *property) {
+  SENSCORD_LOG_DEBUG_TAGGED("libcamera",
+                            "LibcameraImageStreamSource::Set(libcamera_image::"
+                            "CameraFrameRateProperty)");
+  senscord::Status status;
+
+  camera_frame_rate_ = *property;
+  status = adapter_.SetFrameRate(
+                    camera_frame_rate_.num,
+                    camera_frame_rate_.denom);
+  if (!status.ok()) {
+    util_->SendEventError(status);
+    return status;
+  }
+
+  return senscord::Status::OK();
+}
+
+senscord::Status LibcameraImageStreamSource::Get(
+    const std::string &key,
+    senscord::libcamera_image::CameraFrameRateProperty *property) {
+  SENSCORD_LOG_DEBUG_TAGGED("libcamera",
+                            "LibcameraImageStreamSource::Get(libcamera_image::"
+                            "CameraFrameRateProperty)");
+  *property = camera_frame_rate_;
+  return senscord::Status::OK();
+}
+
 bool LibcameraImageStreamSource::GetDeviceID(void) {
   std::string device_id_str = "";
   senscord::Status status;
@@ -1010,30 +1097,8 @@ bool LibcameraImageStreamSource::GetDeviceID(void) {
     }
   }
 
-  /* ioctl */
-  int fd = -1;
-  for (int i = 0; i < 3; i++) {
-    const fs::path sys_dir { "/sys/class/video4linux/v4l-subdev" + std::to_string(i) + "/device" };
-    const fs::path module_dir { sys_dir.string() + "/driver/module" };
-    const fs::path id_dir { sys_dir.string() + "/of_node" };
-
-    if (fs::exists(module_dir) && fs::is_symlink(module_dir)) {
-      fs::path ln = fs::read_symlink(module_dir);
-
-      if (ln.string().find("imx500") != std::string::npos) {
-        const std::string dev_node { "/dev/v4l-subdev" + std::to_string(i) };
-        fd = open(dev_node.c_str(), O_RDONLY, 0);
-        if (fd < 0) {
-          continue;
-        } else {
-          break;
-        }
-      }
-    }
-  }
-
-  if (fd < -1) {
-    SENSCORD_LOG_WARNING("Failed to open device");
+  if (!adapter_.GetDeviceID(device_id_str)) {
+    SENSCORD_LOG_WARNING("Failed to get device id.");
 
     status = adapter_.Stop();
     if (!status.ok()) {
@@ -1041,46 +1106,6 @@ bool LibcameraImageStreamSource::GetDeviceID(void) {
     }
 
     return false;
-  }
-
-  const uint32_t device_id_ctrl_id = 0x00982902;
-  const int32_t device_id_num = 4;
-
-  uint32_t device_id[device_id_num] = {0};
-
-  v4l2_ext_control device_id_ctrl[1];
-  device_id_ctrl[0].id = device_id_ctrl_id;
-  device_id_ctrl[0].p_u32 = (uint32_t *)(&device_id);
-  device_id_ctrl[0].size = sizeof(uint32_t) * device_id_num;
-
-  v4l2_ext_controls ctrls;
-  ctrls.ctrl_class = V4L2_CTRL_CLASS_USER;
-  ctrls.count = 1;
-  ctrls.controls = device_id_ctrl;
-
-  int ret = ioctl(fd, VIDIOC_G_EXT_CTRLS, &ctrls);
-
-  if (ret < 0) {
-    close(fd);
-    SENSCORD_LOG_WARNING("Failed to execute ioctl");
-
-    status = adapter_.Stop();
-    if (!status.ok()) {
-      SENSCORD_LOG_WARNING("Failed to stop camera");
-    }
-
-    return false;
-  }
-
-  close(fd);
-
-  /* convert string */
-  for (int i = 0; i < device_id_num; i++) {
-    std::ostringstream ss;
-    ss << std::setw(8) << std::setfill('0') << std::uppercase << std::hex << device_id[i];
-    std::string result = ss.str();
-
-    device_id_str += result;
   }
 
   /* Stop */

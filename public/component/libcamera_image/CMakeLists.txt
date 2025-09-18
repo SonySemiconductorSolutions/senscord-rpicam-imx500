@@ -42,6 +42,7 @@ add_library(${TARGET_NAME} SHARED
             src/libcamera_image_stream_source.cpp
             src/libcamera_image_sensor_register.cpp
             src/rpicam_app_adapter.cpp
+            src/v4l2_ctrl_manager.cpp
             ${PUBLIC_HEADER_FILES})
 
 # Include directory.
