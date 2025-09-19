@@ -6,6 +6,8 @@
 #ifndef LIB_COMPONENT_LIBCAMERA_IMAGE_SENSOR_REGISTER_H_
 #define LIB_COMPONENT_LIBCAMERA_IMAGE_SENSOR_REGISTER_H_
 
+#include <mutex>
+
 #include "senscord/status.h"
 
 namespace senscord {
@@ -18,6 +20,16 @@ const uint16_t kRegTemperatureValue = 0x013AU;    // Temperature Register
 const uint8_t kRegTemperatureEnableMask = 0x01U;  // Temperature Enable Mask
 const int8_t kRegTemperatureMin = -20;  // Minimum Temperature Value
 const int8_t kRegTemperatureMax = 80;   // Maximum Temperature Value
+
+/* Rotation */
+const uint16_t kRegImageRotate = 0xD680U;  // Image Rotation Register
+enum SensorRegRotationAngle {
+  SENSOR_REG_ROTATION_0   = 0x00U,  // 0   degree
+  SENSOR_REG_ROTATION_90  = 0x01U,  // 90  degrees
+  SENSOR_REG_ROTATION_180 = 0x02U,  // 180 degrees
+  SENSOR_REG_ROTATION_270 = 0x03U,  // 270 degrees
+  SENSOR_REG_ROTATION_NONE
+};
 
 /**
  * @brief The image sensor register control class.
@@ -52,6 +64,7 @@ class SensorRegister {
   const uint8_t kDeviceAddress = 0x1A;  // I2C address of IMX500
   const uint8_t kRegAddrSize = 2;       // 2 bytes
   const uint8_t kBufLimit = 32;         // I2C buffer size limitation
+  inline static std::mutex mutex_access_;
   int handle_;
 
   /**
