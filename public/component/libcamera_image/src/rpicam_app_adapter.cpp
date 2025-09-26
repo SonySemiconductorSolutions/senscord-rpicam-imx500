@@ -74,7 +74,6 @@ LibcameraAdapter::LibcameraAdapter()
       libcam_(nullptr),
       options_(nullptr),
       it_image_property_(nullptr),
-      roi_{0, 0, IMX500_FULL_RESOLUTION_WIDTH, IMX500_FULL_RESOLUTION_HEIGHT},
       sensor_output_{0, 0, IMX500_FULL_RESOLUTION_WIDTH,
                      IMX500_FULL_RESOLUTION_HEIGHT},
       norm_val_{0, 0, 0, 0},
@@ -270,6 +269,7 @@ senscord::Status LibcameraAdapter::Open(
       "Failed to open image sensor register control.");
     return status;
   }
+  reg_handle_.SetEnableAccess(false);
 
   SENSCORD_LOG_INFO_TAGGED("libcamera", "libcamera::Camera(%s) : \"%s\"",
                            device_name.c_str(), camera_->id().c_str());
@@ -365,6 +365,7 @@ senscord::Status LibcameraAdapter::Close() {
   std::lock_guard<std::mutex> lock(LibcameraAdapter::mutex_camera_manager_);
 
   if (camera_) {
+    reg_handle_.SetEnableAccess(false);
     camera_->stop();
     camera_.reset();
     libcam_->StopCamera();
@@ -387,8 +388,6 @@ senscord::Status LibcameraAdapter::Start() {
   libcam_->SetControls(cl);
 
   libcam_->StartCamera();
-  UpdateImageRotationProperty();  // for reset in StartCamera()
-  libcam_->SetInferenceRoiAbs(roi_);
 
   count_drop_frames_ = 0;
 
@@ -396,6 +395,7 @@ senscord::Status LibcameraAdapter::Start() {
 }
 
 senscord::Status LibcameraAdapter::Stop() {
+  reg_handle_.SetEnableAccess(false);
   libcam_->StopCamera();
 
   {
@@ -735,6 +735,18 @@ void LibcameraAdapter::GetFrames(std::vector<senscord::FrameInfo> *frames, bool 
       return;
     }
 
+    if (count_drop_frames_ == 0) {
+      reg_handle_.SetEnableAccess(true);
+      /*
+        Since the v4l2 kernel driver and libcamera do not support rotation,
+        the register is controlled directly.
+        However, due to current limitations in libcamera,
+        the register can only be accessed at this timing, so the rotation is set here.
+        As a result, rotation is not set for the first frame, but several frames are discarded for AE/AWB,
+        so images without rotation are not notified to higher layers.
+      */
+      UpdateImageRotationProperty();
+    }
     if (count_drop_frames_ > MAX_NUM_DROP_FRAMES) {
       payload = std::get<CompletedRequestPtr>(msg.payload);
       break;
@@ -993,7 +1005,9 @@ senscord::Status LibcameraAdapter::SetProperty(
       return SENSCORD_STATUS_FAIL("libcamera", senscord::Status::kCauseInvalidArgument,
                                   "Invalid rotation value : %d", property->rotation_angle);
   }
-  UpdateImageRotationProperty();
+  if (reg_handle_.IsEnableAccess()) {
+    UpdateImageRotationProperty();
+  }
   return senscord::Status::OK();
 }
 

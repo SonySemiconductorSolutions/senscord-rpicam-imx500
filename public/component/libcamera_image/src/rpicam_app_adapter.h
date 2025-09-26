@@ -27,9 +27,9 @@
 #define MAX_NUM_DROP_FRAMES (7)
 #define AE_FLICKER_PERIOD_50HZ ("20000us")
 #define AE_FLICKER_PERIOD_60HZ ("16667us")
-#define CAMERA_IMAGE_WIDTH_DEFAULT (4056) /* pixel */
-#define CAMERA_IMAGE_HEIGHT_DEFAULT (3040) /* pixel */
-#define CAMERA_FRAME_RATE_DEFAULT (10.f) /* fps */
+#define CAMERA_IMAGE_WIDTH_DEFAULT (2028) /* pixel */
+#define CAMERA_IMAGE_HEIGHT_DEFAULT (1520) /* pixel */
+#define CAMERA_FRAME_RATE_DEFAULT (30.f) /* fps */
 #define CAMERA_FRAME_RATE_DENOM_DEFAULT (1.001f)
 
 namespace libcamera {
@@ -290,7 +290,6 @@ class LibcameraAdapter {
   senscord::libcamera_image::ImageRotationProperty rotation_property_;
   senscord::libcamera_image::CameraImageFlipProperty flip_property_;
   senscord::libcamera_image::TensorShapesProperty tensor_shapes_property_;
-  libcamera::Rectangle roi_;
   libcamera::Rectangle sensor_output_;
   int32_t norm_val_[4];
   uint32_t norm_shift_[4];

@@ -18,6 +18,9 @@
 namespace senscord {
 namespace libcamera_image {
 
+std::mutex SensorRegister::mutex_access_;
+bool SensorRegister::enable_access_ = false;
+
 SensorRegister::SensorRegister() : handle_(-1) {}
 
 SensorRegister::~SensorRegister() {

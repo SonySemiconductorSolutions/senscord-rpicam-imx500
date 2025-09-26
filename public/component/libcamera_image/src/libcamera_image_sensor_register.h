@@ -59,12 +59,30 @@ class SensorRegister {
    */
   senscord::Status WriteRegister(const uint16_t reg, const uint8_t* value, size_t len = 1);
 
+  /**
+   * @brief Check to enable access
+   */
+  bool IsEnableAccess(void) {
+    std::lock_guard<std::mutex> lock(mutex_access_);
+    return enable_access_;
+  }
+
+  /**
+   * @brief Set to enable access
+   * @note Access to the sensor register is enabled after the Start streaming.
+   */
+  void SetEnableAccess(bool enable) {
+    std::lock_guard<std::mutex> lock(mutex_access_);
+    enable_access_ = enable;
+  }
+
  private:
   const uint8_t kDevicePort = 10;       // I2C port of IMX500
   const uint8_t kDeviceAddress = 0x1A;  // I2C address of IMX500
   const uint8_t kRegAddrSize = 2;       // 2 bytes
   const uint8_t kBufLimit = 32;         // I2C buffer size limitation
-  inline static std::mutex mutex_access_;
+  static std::mutex mutex_access_;
+  static bool enable_access_;
   int handle_;
 
   /**
