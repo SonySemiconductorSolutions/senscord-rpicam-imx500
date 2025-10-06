@@ -31,6 +31,8 @@
 #define CAMERA_IMAGE_HEIGHT_DEFAULT (1520) /* pixel */
 #define CAMERA_FRAME_RATE_DEFAULT (30.f) /* fps */
 #define CAMERA_FRAME_RATE_DENOM_DEFAULT (1.001f)
+#define MODEL_ID_CONVERTER_VERSION_IT_ONLY ("000000")
+#define MODEL_ID_VERSION_NUMBER_IT_ONLY ("0000")
 
 namespace libcamera {
 class CameraManager;
@@ -262,6 +264,9 @@ class LibcameraAdapter {
   std::string ReadPostProcessJsonString(const std::string &post_process_file);
   std::string GetRpkPath(const std::string &json_str);
   bool CheckRpkExist(const std::string &post_process_file);
+  bool IsNoCrop(uint32_t crop_left, uint32_t crop_top, uint32_t crop_width, uint32_t crop_height);
+  bool IsValidCropRange(
+      uint32_t crop_left, uint32_t crop_top, uint32_t crop_width, uint32_t crop_height);
   bool UpdateImageCrop(void);
 
  private:
@@ -286,6 +291,7 @@ class LibcameraAdapter {
   Options *options_;
   senscord::ImageProperty *it_image_property_;
   senscord::ImageProperty *full_image_property_;
+  senscord::ImageProperty base_image_property_;
   void InitializeOptions(Options *&options);
   senscord::libcamera_image::ImageRotationProperty rotation_property_;
   senscord::libcamera_image::CameraImageFlipProperty flip_property_;
@@ -306,6 +312,8 @@ class LibcameraAdapter {
   float camera_frame_rate_;
   ImageFlip image_flip_;
   ImageCrop image_crop_;
+  bool no_image_crop_;
+  bool is_running_;
 
   void UpdateTensorShapesProperty(CompletedRequestPtr payload);
   void UpdateImageRotationProperty(void);

@@ -241,10 +241,18 @@ senscord::Status LibcameraImageStreamSource::Start() {
 
   // Apply initial image property
   adapter_.GetImageProperty(&image_property_, AITRIOS_SENSOR_CHANNEL_ID_INFERENCE_RAW_IMAGE);
-  Set(senscord::kImagePropertyKey, &image_property_);
+  status = Set(senscord::kImagePropertyKey, &image_property_);
+  if (!status.ok()) {
+    util_->SendEventError(status);
+    return status;
+  }
 
   // Apply initial framerate
-  Set(senscord::kFrameRatePropertyKey, &framerate_property_);
+  status = Set(senscord::kFrameRatePropertyKey, &framerate_property_);
+  if (!status.ok()) {
+    util_->SendEventError(status);
+    return status;
+  }
 
   status = adapter_.Start();
   if (!status.ok()) {
