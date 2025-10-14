@@ -264,6 +264,8 @@ class LibcameraAdapter {
   std::string ReadPostProcessJsonString(const std::string &post_process_file);
   std::string GetRpkPath(const std::string &json_str);
   bool CheckRpkExist(const std::string &post_process_file);
+  uint32_t ConvertCropHorizontalToSensor(uint32_t target);
+  uint32_t ConvertCropVerticalToSensor(uint32_t target);
   bool IsNoCrop(uint32_t crop_left, uint32_t crop_top, uint32_t crop_width, uint32_t crop_height);
   bool IsValidCropRange(
       uint32_t crop_left, uint32_t crop_top, uint32_t crop_width, uint32_t crop_height);

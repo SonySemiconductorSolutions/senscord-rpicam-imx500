@@ -396,6 +396,13 @@ senscord::Status LibcameraAdapter::Start() {
     }
   }
 
+  /* Control IMX500 Device Driver(v4l2-subdevice). */
+  if (!UpdateImageCrop()) {
+    return SENSCORD_STATUS_FAIL("libcamera",
+                                senscord::Status::kCauseAborted,
+                                "Failed to update crop parameters.");
+  }
+
   libcamera::ControlList cl;
   cl.set(libcamera::controls::rpi::CnnEnableInputTensor, true);
   libcam_->SetControls(cl);
@@ -479,21 +486,6 @@ senscord::Status LibcameraAdapter::Configure(
       camera_->generateConfiguration({libcamera::StreamRole::Raw});
 
   libcam_->ConfigureViewfinder();
-
-  if ((options_->viewfinder_mode.width == 0) ||
-      (options_->viewfinder_mode.height == 0)) {
-    return SENSCORD_STATUS_FAIL("libcamera",
-                                senscord::Status::kCauseNotSupported,
-                                "Not supported camera param: width %d, height %d, frame_rate %f",
-                                camera_image_width_, camera_image_height_, camera_frame_rate_);
-  }
-
-  /* Control IMX500 Device Driver(v4l2-subdevice). */
-  if (!UpdateImageCrop()) {
-    return SENSCORD_STATUS_FAIL("libcamera",
-                                senscord::Status::kCauseAborted,
-                                "Failed to update crop parameters.");
-  }
 
   // todo: add frame_rate, and multi-plane
   config.get()->at(0).size = {image_property.width, image_property.height};
@@ -1991,6 +1983,14 @@ bool LibcameraAdapter::GetDeviceID(std::string &device_id_str) {
   return true;
 }
 
+uint32_t LibcameraAdapter::ConvertCropHorizontalToSensor(uint32_t target) {
+  return (uint32_t)((target * IMX500_FULL_RESOLUTION_WIDTH) / camera_image_width_);
+}
+
+uint32_t LibcameraAdapter::ConvertCropVerticalToSensor(uint32_t target) {
+  return (uint32_t)((target * IMX500_FULL_RESOLUTION_HEIGHT) / camera_image_height_);
+}
+
 bool LibcameraAdapter::IsNoCrop(
     uint32_t crop_left, uint32_t crop_top, uint32_t crop_width, uint32_t crop_height) {
   return (crop_left == 0) &&
@@ -2038,7 +2038,21 @@ bool LibcameraAdapter::UpdateImageCrop(void) {
     return false;
   }
 
-  const uint32_t crop_param[4] = {image_crop_.x, image_crop_.y, image_crop_.w, image_crop_.h};
+  if ((camera_image_width_ == 0) || (camera_image_height_ == 0)) {
+    SENSCORD_LOG_ERROR_TAGGED(
+        "libcamera",
+        "Invalid parameter is set, camera image size %dx%d.",
+        camera_image_width_, camera_image_height_);
+    v4l2_manager.Close();
+    return false;
+  }
+
+  const uint32_t crop_param[4] = {
+      ConvertCropHorizontalToSensor(image_crop_.x),
+      ConvertCropVerticalToSensor(image_crop_.y),
+      ConvertCropHorizontalToSensor(image_crop_.w),
+      ConvertCropVerticalToSensor(image_crop_.h)
+  };
   const uint32_t inference_window_id = INFERENCE_WINDOW_ID;
 
   if (!v4l2_manager.SetExtControl(

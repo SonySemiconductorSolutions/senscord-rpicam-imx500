@@ -10,6 +10,8 @@
 
 #include "senscord/status.h"
 
+#define I2C_DEVICE_NAME ("/dev/i2c-imx500")
+
 namespace senscord {
 namespace libcamera_image {
 
@@ -77,7 +79,6 @@ class SensorRegister {
   }
 
  private:
-  const uint8_t kDevicePort = 10;       // I2C port of IMX500
   const uint8_t kDeviceAddress = 0x1A;  // I2C address of IMX500
   const uint8_t kRegAddrSize = 2;       // 2 bytes
   const uint8_t kBufLimit = 32;         // I2C buffer size limitation

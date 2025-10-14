@@ -33,7 +33,7 @@ senscord::Status SensorRegister::Open(void) {
     return senscord::Status::OK();  // Already opened
   }
 
-  std::string dev_path = "/dev/i2c-" + std::to_string(kDevicePort);
+  std::string dev_path = I2C_DEVICE_NAME;
   handle_ = open(dev_path.c_str(), O_RDWR);
   if (handle_ < 0) {
     handle_ = -1;
