@@ -40,6 +40,7 @@ constexpr char kLibcameraTemperaturePropertyKey[] = "temperature_property";
 constexpr char kLibcameraCameraImageSizePropertykey[] = "camera_image_size_property";
 constexpr char kLibcameraCameraFrameRatePropertykey[] = "camera_frame_rate_property";
 constexpr char kLibcameraImageCropPropertyKey[] = "image_crop_property";
+constexpr char kLibcameraCameraImagePropertyKey[] = "camera_image_property";
 
 /**
  * @brief libcamera access property.
@@ -273,6 +274,20 @@ struct CameraFrameRateProperty {
   uint32_t denom;
 
   SENSCORD_SERIALIZE_DEFINE(num, denom)
+};
+
+/**
+ * @brief Property CameraImage.
+ */
+const uint32_t kPixelFormatLength = 64;
+struct CameraImageProperty {
+  uint32_t width;         /**< Image width. */
+  uint32_t height;        /**< Image height. */
+  uint32_t stride_bytes;  /**< Image stride. */
+  /** The format of a pixel. */
+  char pixel_format[kPixelFormatLength];
+
+  SENSCORD_SERIALIZE_DEFINE(width, height, stride_bytes, pixel_format)
 };
 
 }  // namespace libcamera_image

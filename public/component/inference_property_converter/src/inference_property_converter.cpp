@@ -71,6 +71,7 @@ Status InferencePropertyConverterLibrary::Init(ConverterCollector* collector) {
   AddType(senscord_input_data_type_property_t, InputDataTypeProperty);
   AddType(senscord_camera_auto_exposure_metering_property_t, CameraAutoExposureMeteringProperty);
   AddType(senscord_image_crop_property_t, ImageCropProperty);
+  AddType(senscord_camera_image_property_t, CameraImageProperty);
   return Status::OK();
 }
 
@@ -530,6 +531,27 @@ Status InferencePropertyConverterLibrary::cxx_to_c(
   dst->top = src.top;
   dst->width = src.width;
   dst->height = src.height;
+  return Status::OK();
+}
+
+// CameraImageProperty
+Status InferencePropertyConverterLibrary::c_to_cxx(
+    const senscord_camera_image_property_t& src,
+    CameraImageProperty* dst) {
+  dst->width = src.width;
+  dst->height = src.height;
+  dst->stride_bytes = src.stride_bytes;
+  memcpy(dst->pixel_format, src.pixel_format, SENSCORD_PIXEL_FORMAT_LENGTH);
+  return Status::OK();
+}
+
+Status InferencePropertyConverterLibrary::cxx_to_c(
+    const CameraImageProperty& src,
+    senscord_camera_image_property_t* dst) {
+  dst->width = src.width;
+  dst->height = src.height;
+  dst->stride_bytes = src.stride_bytes;
+  memcpy(dst->pixel_format, src.pixel_format, SENSCORD_PIXEL_FORMAT_LENGTH);
   return Status::OK();
 }
 

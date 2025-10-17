@@ -74,7 +74,9 @@ class InferencePropertyConverterLibrary
       public StructConverterC<senscord_camera_auto_exposure_metering_property_t,
                               CameraAutoExposureMeteringProperty>,
       public StructConverterC<senscord_image_crop_property_t,
-                              ImageCropProperty> {
+                              ImageCropProperty>,
+      public StructConverterC<senscord_camera_image_property_t,
+                              CameraImageProperty> {
  public:
   virtual ~InferencePropertyConverterLibrary() {}
 
@@ -129,6 +131,7 @@ class InferencePropertyConverterLibrary
   CONVERTER_FUNC(senscord_input_data_type_property_t, InputDataTypeProperty);
   CONVERTER_FUNC(senscord_camera_auto_exposure_metering_property_t, CameraAutoExposureMeteringProperty);
   CONVERTER_FUNC(senscord_image_crop_property_t, ImageCropProperty);
+  CONVERTER_FUNC(senscord_camera_image_property_t, CameraImageProperty);
 };
 
 }  // namespace senscord

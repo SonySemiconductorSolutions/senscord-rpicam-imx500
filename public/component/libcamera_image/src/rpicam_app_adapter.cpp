@@ -90,6 +90,8 @@ LibcameraAdapter::LibcameraAdapter()
       count_drop_frames_(0),
       camera_image_width_(CAMERA_IMAGE_WIDTH_DEFAULT),
       camera_image_height_(CAMERA_IMAGE_HEIGHT_DEFAULT),
+      camera_image_size_width_(CAMERA_IMAGE_WIDTH_DEFAULT),
+      camera_image_size_height_(CAMERA_IMAGE_HEIGHT_DEFAULT),
       camera_frame_rate_(
           CAMERA_FRAME_RATE_DEFAULT / CAMERA_FRAME_RATE_DENOM_DEFAULT),
       image_flip_{false, false},
@@ -389,6 +391,11 @@ senscord::Status LibcameraAdapter::Start() {
   }
 
   if (!no_image_crop_) {
+    if (!ReadInputTensorSize(options_->post_process_file)) {
+      return SENSCORD_STATUS_FAIL("libcamera", senscord::Status::kCauseAborted,
+                                  "Failed to check inference size from rpk.");
+    }
+
     if (!IsValidCropRange(image_crop_.x, image_crop_.y, image_crop_.w, image_crop_.h)) {
       return SENSCORD_STATUS_FAIL("libcamera", senscord::Status::kCauseOutOfRange,
                                   "Invalid crop range : x=%d, y=%d, w=%d, h=%d",
@@ -468,9 +475,12 @@ senscord::Status LibcameraAdapter::Configure(
   }
 
   options_->no_raw = false;
-  options_->viewfinder_width = camera_image_width_;
-  options_->viewfinder_height = camera_image_height_;
+  options_->isp_width = camera_image_width_;
+  options_->isp_height = camera_image_height_;
+  options_->viewfinder_width = camera_image_size_width_;
+  options_->viewfinder_height = camera_image_size_height_;
   options_->framerate = camera_frame_rate_;
+  options_->viewfinder_mode_string = camera_image_pixel_format_;
 
   if (image_flip_.h && image_flip_.v) {
     options_->transform = libcamera::Transform::HVFlip;
@@ -486,6 +496,14 @@ senscord::Status LibcameraAdapter::Configure(
       camera_->generateConfiguration({libcamera::StreamRole::Raw});
 
   libcam_->ConfigureViewfinder();
+
+  if ((options_->viewfinder_mode.width == 0) ||
+      (options_->viewfinder_mode.height == 0)) {
+    return SENSCORD_STATUS_FAIL("libcamera",
+                                senscord::Status::kCauseNotSupported,
+                                "Not supported camera param: width %d, height %d, frame_rate %f",
+                                camera_image_size_width_, camera_image_size_height_, camera_frame_rate_);
+  }
 
   // todo: add frame_rate, and multi-plane
   config.get()->at(0).size = {image_property.width, image_property.height};
@@ -514,8 +532,8 @@ senscord::Status LibcameraAdapter::Configure(
                                   senscord::Status::kCauseInvalidArgument, "");
   }
 
-  sensor_output_.width = camera_image_width_;
-  sensor_output_.height = camera_image_height_;
+  sensor_output_.width = camera_image_size_width_;
+  sensor_output_.height = camera_image_size_height_;
 
   return senscord::Status::OK();
 }
@@ -912,6 +930,7 @@ void LibcameraAdapter::GetFrames(std::vector<senscord::FrameInfo> *frames, bool 
   full_image_property_->width = info.width;
   full_image_property_->height = info.height;
   full_image_property_->stride_bytes = info.stride;
+  camera_image_stride_bytes_ = info.stride;
   util_->UpdateChannelProperty(AITRIOS_SENSOR_CHANNEL_ID_INFERENCE_RAW_IMAGE,
                                senscord::kImagePropertyKey,
                                full_image_property_);
@@ -1305,8 +1324,8 @@ senscord::Status LibcameraAdapter::SetManualExposureParam(
 senscord::Status LibcameraAdapter::SetImageSize(
     uint32_t width,
     uint32_t height) {
-  camera_image_width_ = width;
-  camera_image_height_ = height;
+  camera_image_size_width_ = width;
+  camera_image_size_height_ = height;
   return senscord::Status::OK();
 }
 
@@ -1360,6 +1379,42 @@ senscord::Status LibcameraAdapter::SetImageCrop(
                                 senscord::Status::kCauseAborted,
                                 "Failed to update crop parameters.");
   }
+
+  return senscord::Status::OK();
+}
+
+senscord::Status LibcameraAdapter::SetCameraImage(
+    uint32_t width,
+    uint32_t height,
+    char *pixel_format) {
+  camera_image_width_ = width;
+  camera_image_height_ = height;
+
+  if ((pixel_format == nullptr) || (strnlen(pixel_format, kPixelFormatLength) == 0)) {
+    camera_image_pixel_format_ = options_->viewfinder_mode_string;
+  } else {
+    camera_image_pixel_format_ = std::string(pixel_format);
+  }
+
+  return senscord::Status::OK();
+}
+
+senscord::Status LibcameraAdapter::GetCameraImage(
+    uint32_t &width,
+    uint32_t &height,
+    uint32_t &stride_bytes,
+    char *pixel_format) {
+  width = camera_image_width_;
+  height = camera_image_height_;
+  stride_bytes = camera_image_stride_bytes_;
+
+  if (pixel_format == nullptr) {
+    return SENSCORD_STATUS_FAIL("libcamera", senscord::Status::kCauseInvalidArgument,
+                              "pixel_format is null");
+  }
+
+  strncpy(pixel_format, camera_image_pixel_format_.c_str(), kPixelFormatLength - 1);
+  pixel_format[kPixelFormatLength - 1] = '\0';
 
   return senscord::Status::OK();
 }
@@ -1943,6 +1998,109 @@ bool LibcameraAdapter::CheckRpkExist(const std::string &post_process_file) {
   return true;
 }
 
+bool LibcameraAdapter::ReadInputTensorSizeFromRpkFile(
+    const uint8_t *data,
+    size_t size) {
+  typedef struct {
+    const char *key;
+    uint32_t *value_out;
+    uint32_t found;
+  } ParamKey;
+
+  uint32_t width = 0, height = 0;
+  ParamKey params[] = {
+    {"inputTensorWidth", &width, 0},
+    {"inputTensorHeight", &height, 0}
+  };
+  int num_params = sizeof(params) / sizeof(params[0]);
+
+  /* Search from the end since network_info is appended at the end of the RPK file. */
+  for (size_t i = size; i > 0; i--) {
+    size_t index = i - 1;
+    for (int p = 0; p < num_params; p++) {
+      size_t key_len = strnlen(params[p].key, index + 1);
+
+      if (!params[p].found &&
+        (index >= key_len) &&
+        (memcmp(data + index - key_len + 1, params[p].key, key_len) == 0)) {
+        size_t pos = index + 1;
+
+        while ((pos < size) && ((data[pos] == ' ') || (data[pos] == '\t'))) {
+          pos++;
+        }
+
+        if (pos < size && data[pos] == '=') {
+          pos++;
+          uint32_t value = 0;
+
+          while ((pos < size) && (data[pos] >= '0') && (data[pos] <= '9')) {
+            value = value * 10 + (data[pos] - '0');
+            pos++;
+          }
+
+          *(params[p].value_out) = value;
+          params[p].found = 1;
+        }
+      }
+    }
+
+    int all_found = 1;
+    for (int p = 0; p < num_params; p++) {
+      if (!params[p].found) {
+        all_found = 0;
+      }
+    }
+    if (all_found) {
+      break;
+    }
+  }
+
+  it_image_property_->width = width;
+  it_image_property_->height = height;
+
+  return true;
+}
+
+bool LibcameraAdapter::ReadInputTensorSize(const std::string &post_process_file) {
+  std::string j_str = ReadPostProcessJsonString(post_process_file);
+  if (j_str.empty()) {
+    SENSCORD_LOG_WARNING_TAGGED("libcamera", "The json parameter for PostProcess is empty.");
+    return false;
+  }
+
+  std::string rpk_path = GetRpkPath(j_str);
+  FILE *f = fopen(rpk_path.c_str(), "rb");
+  if (!f) {
+    SENSCORD_LOG_WARNING_TAGGED(
+        "libcamera",
+        "Failed to open %s, %s.",
+        rpk_path.c_str(), strerror(errno));
+    return false;
+  }
+
+  fseek(f, 0, SEEK_END);
+  size_t fsize = ftell(f);
+  rewind(f);
+
+  std::vector<uint8_t> data(fsize);
+
+  size_t bytes_read = fread(data.data(), 1, fsize, f);
+  fclose(f);
+
+  if (bytes_read != fsize) {
+    SENSCORD_LOG_ERROR_TAGGED("libcamera",
+                              "Failed to read complete file: expected %zu bytes, read %zu bytes",
+                              fsize, bytes_read);
+    return false;
+  }
+
+  if(!ReadInputTensorSizeFromRpkFile(data.data(), fsize)) {
+    return false;
+  }
+
+  return true;
+}
+
 bool LibcameraAdapter::GetDeviceID(std::string &device_id_str) {
   V4L2CtrlManager v4l2_manager;
 
@@ -1984,19 +2142,19 @@ bool LibcameraAdapter::GetDeviceID(std::string &device_id_str) {
 }
 
 uint32_t LibcameraAdapter::ConvertCropHorizontalToSensor(uint32_t target) {
-  return (uint32_t)((target * IMX500_FULL_RESOLUTION_WIDTH) / camera_image_width_);
+  return (uint32_t)((target * IMX500_FULL_RESOLUTION_WIDTH) / camera_image_size_width_);
 }
 
 uint32_t LibcameraAdapter::ConvertCropVerticalToSensor(uint32_t target) {
-  return (uint32_t)((target * IMX500_FULL_RESOLUTION_HEIGHT) / camera_image_height_);
+  return (uint32_t)((target * IMX500_FULL_RESOLUTION_HEIGHT) / camera_image_size_height_);
 }
 
 bool LibcameraAdapter::IsNoCrop(
     uint32_t crop_left, uint32_t crop_top, uint32_t crop_width, uint32_t crop_height) {
   return (crop_left == 0) &&
          (crop_top == 0) &&
-         (crop_width == camera_image_width_) &&
-         (crop_height == camera_image_height_);
+         (crop_width == camera_image_size_width_) &&
+         (crop_height == camera_image_size_height_);
 }
 
 
@@ -2005,26 +2163,26 @@ bool LibcameraAdapter::IsValidCropRange(
   bool swap = (rotation_property_.rotation_angle == SENSOR_ROTATION_ANGLE_90_DEG) ||
               (rotation_property_.rotation_angle == SENSOR_ROTATION_ANGLE_270_DEG);
   uint32_t inference_image_width = swap ?
-    base_image_property_.height : base_image_property_.width;
+    it_image_property_->height : it_image_property_->width;
   uint32_t inference_image_height = swap ?
-    base_image_property_.width : base_image_property_.height;
+    it_image_property_->width : it_image_property_->height;
   uint32_t result = 0;
   result |= ((int)crop_left < 0) << 0;
-  result |= ((int)crop_left > (int)(camera_image_width_ - crop_width)) << 1;
+  result |= ((int)crop_left > (int)(camera_image_size_width_ - crop_width)) << 1;
   result |= ((int)crop_width < (int)inference_image_width) << 2;
-  result |= ((int)crop_width > (int)(camera_image_width_ - crop_left)) << 3;
+  result |= ((int)crop_width > (int)(camera_image_size_width_ - crop_left)) << 3;
   result |= ((int)crop_top < 0) << 4;
-  result |= ((int)crop_top > (int)(camera_image_height_ - crop_height)) << 5;
+  result |= ((int)crop_top > (int)(camera_image_size_height_ - crop_height)) << 5;
   result |= ((int)crop_height < (int)inference_image_height) << 6;
-  result |= ((int)crop_height > (int)(camera_image_height_ - crop_top)) << 7;
+  result |= ((int)crop_height > (int)(camera_image_size_height_ - crop_top)) << 7;
   if (result != 0) {
     SENSCORD_LOG_ERROR_TAGGED("libcamera", "Crop range error: 0x%x", result);
     SENSCORD_LOG_ERROR_TAGGED("libcamera", "  [crop] left: %d, top: %d, width: %d, height: %d",
          crop_left, crop_top, crop_width, crop_height);
     SENSCORD_LOG_ERROR_TAGGED("libcamera", "  [camera image] width: %d, height: %d",
-         camera_image_width_, camera_image_height_);
+         camera_image_size_width_, camera_image_size_height_);
     SENSCORD_LOG_ERROR_TAGGED("libcamera", "  [inference image] width: %d, height: %d",
-         base_image_property_.width, base_image_property_.height);
+         it_image_property_->width, it_image_property_->height);
     SENSCORD_LOG_ERROR_TAGGED("libcamera", "  [rotation] %d", rotation_property_.rotation_angle);
   }
   return (result == 0);
@@ -2038,11 +2196,11 @@ bool LibcameraAdapter::UpdateImageCrop(void) {
     return false;
   }
 
-  if ((camera_image_width_ == 0) || (camera_image_height_ == 0)) {
+  if ((camera_image_size_width_ == 0) || (camera_image_size_height_ == 0)) {
     SENSCORD_LOG_ERROR_TAGGED(
         "libcamera",
         "Invalid parameter is set, camera image size %dx%d.",
-        camera_image_width_, camera_image_height_);
+        camera_image_size_width_, camera_image_size_height_);
     v4l2_manager.Close();
     return false;
   }

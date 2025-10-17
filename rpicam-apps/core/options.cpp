@@ -267,6 +267,10 @@ Options::Options()
 			"Set the fixed framerate for preview and video modes")
 		("denoise", value<std::string>(&denoise)->default_value("auto"),
 			"Sets the Denoise operating mode: auto, off, cdn_off, cdn_fast, cdn_hq")
+		("isp-width", value<unsigned int>(&isp_width)->default_value(0),
+			"Width of ISP frames from the camera (distinct from the preview window size")
+		("isp-height", value<unsigned int>(&isp_height)->default_value(0),
+			"Height of ISP frames from the camera (distinct from the preview window size)")
 		("viewfinder-width", value<unsigned int>(&viewfinder_width)->default_value(0),
 			"Width of viewfinder frames from the camera (distinct from the preview window size")
 		("viewfinder-height", value<unsigned int>(&viewfinder_height)->default_value(0),
