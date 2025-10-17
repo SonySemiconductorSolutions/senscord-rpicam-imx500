@@ -106,6 +106,9 @@ senscord::Status LibcameraImageStreamSource::Open(
   SENSCORD_REGISTER_PROPERTY(
       util_, senscord::libcamera_image::kLibcameraCameraFrameRatePropertykey,
       senscord::libcamera_image::CameraFrameRateProperty);
+  SENSCORD_REGISTER_PROPERTY(
+      util_, senscord::libcamera_image::kLibcameraCameraImagePropertyKey,
+      senscord::libcamera_image::CameraImageProperty);
 
   std::string device = "";
   uint64_t uint_value = 0;
@@ -1068,6 +1071,49 @@ senscord::Status LibcameraImageStreamSource::Get(
   *property = camera_frame_rate_;
   return senscord::Status::OK();
 }
+
+senscord::Status LibcameraImageStreamSource::Set(
+    const std::string &key,
+    const senscord::libcamera_image::CameraImageProperty *property) {
+  SENSCORD_LOG_DEBUG_TAGGED("libcamera",
+                            "LibcameraImageStreamSource::Set(libcamera_image::"
+                            "CameraImageProperty)");
+  senscord::Status status;
+  CameraImageProperty camera_image = *property;
+  status = adapter_.SetCameraImage(
+                    camera_image.width,
+                    camera_image.height,
+                    camera_image.pixel_format);
+  if (!status.ok()) {
+    util_->SendEventError(status);
+    return status;
+  }
+
+  return senscord::Status::OK();
+}
+
+senscord::Status LibcameraImageStreamSource::Get(
+    const std::string &key,
+    senscord::libcamera_image::CameraImageProperty *property) {
+  SENSCORD_LOG_DEBUG_TAGGED("libcamera",
+                            "LibcameraImageStreamSource::Get(libcamera_image::"
+                            "CameraImageProperty)");
+  senscord::Status status;
+  CameraImageProperty camera_image;
+  status = adapter_.GetCameraImage(
+                    camera_image.width,
+                    camera_image.height,
+                    camera_image.stride_bytes,
+                    camera_image.pixel_format);
+  if (!status.ok()) {
+    util_->SendEventError(status);
+    return status;
+  }
+
+  *property = camera_image;
+  return senscord::Status::OK();
+}
+
 
 bool LibcameraImageStreamSource::GetDeviceID(void) {
   std::string device_id_str = "";

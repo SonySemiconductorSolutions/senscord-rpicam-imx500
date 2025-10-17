@@ -153,6 +153,8 @@ struct Options
 	unsigned int lores_height;
 	bool lores_par;
 	unsigned int camera;
+	unsigned int isp_width;
+	unsigned int isp_height;
 	std::string mode_string;
 	Mode mode;
 	std::string viewfinder_mode_string;
