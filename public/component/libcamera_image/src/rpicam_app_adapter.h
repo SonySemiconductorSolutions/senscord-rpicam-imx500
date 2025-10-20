@@ -221,6 +221,15 @@ class LibcameraAdapter {
       uint32_t top,
       uint32_t width,
       uint32_t height);
+  senscord::Status SetCameraImage(
+      uint32_t width,
+      uint32_t height,
+      char *pixel_format);
+  senscord::Status GetCameraImage(
+      uint32_t &width,
+      uint32_t &height,
+      uint32_t &stride_bytes,
+      char *pixel_format);
 
   // for internal use
   senscord::Status SetLibcameraControl(
@@ -264,6 +273,8 @@ class LibcameraAdapter {
   std::string ReadPostProcessJsonString(const std::string &post_process_file);
   std::string GetRpkPath(const std::string &json_str);
   bool CheckRpkExist(const std::string &post_process_file);
+  bool ReadInputTensorSizeFromRpkFile(const uint8_t *data, size_t size);
+  bool ReadInputTensorSize(const std::string &post_process_file);
   uint32_t ConvertCropHorizontalToSensor(uint32_t target);
   uint32_t ConvertCropVerticalToSensor(uint32_t target);
   bool IsNoCrop(uint32_t crop_left, uint32_t crop_top, uint32_t crop_width, uint32_t crop_height);
@@ -309,13 +320,17 @@ class LibcameraAdapter {
   ExposureModeParam exposure_mode_;
   ManualExposureParam manual_exposure_;
   senscord::libcamera_image::SensorRegister reg_handle_;
-  uint32_t camera_image_width_;
-  uint32_t camera_image_height_;
+  uint32_t camera_image_size_width_;
+  uint32_t camera_image_size_height_;
   float camera_frame_rate_;
   ImageFlip image_flip_;
   ImageCrop image_crop_;
   bool no_image_crop_;
   bool is_running_;
+  uint32_t camera_image_width_;
+  uint32_t camera_image_height_;
+  uint32_t camera_image_stride_bytes_;
+  std::string camera_image_pixel_format_;
 
   void UpdateTensorShapesProperty(CompletedRequestPtr payload);
   void UpdateImageRotationProperty(void);

@@ -482,6 +482,22 @@ struct CameraAutoExposureMeteringProperty {
   SENSCORD_SERIALIZE_DEFINE(mode, window)
 };
 
+/**
+ * CameraImageProperty
+ */
+const char kCameraImagePropertyKey[] = "camera_image_property";
+const uint32_t kPixelFormatLength = 64;
+
+struct CameraImageProperty {
+  uint32_t width;         /**< Image width. */
+  uint32_t height;        /**< Image height. */
+  uint32_t stride_bytes;  /**< Image stride. */
+  /** The format of a pixel. */
+  char pixel_format[kPixelFormatLength];
+
+  SENSCORD_SERIALIZE_DEFINE(width, height, stride_bytes, pixel_format)
+};
+
 }  // namespace senscord
 
 #endif  // SENSCORD_INFERENCE_STREAM_INFERENCE_STREAM_TYPES_H_

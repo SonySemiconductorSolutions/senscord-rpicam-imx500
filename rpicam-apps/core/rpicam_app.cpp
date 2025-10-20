@@ -230,48 +230,26 @@ void RPiCamApp::CloseCamera()
 
 Mode RPiCamApp::selectMode(const Mode &mode) const
 {
-	auto scoreFormat = [](double desired, double actual) -> double
-	{
-		double score = desired - actual;
-		// Smaller desired dimensions are preferred.
-		if (score < 0.0)
-			score = (-score) / 8;
-		// Penalise non-exact matches.
-		if (actual != desired)
-			score *= 2;
-
-		return score;
-	};
-
-	constexpr float penalty_AR = 1500.0;
-	constexpr float penalty_BD = 500.0;
-	constexpr float penalty_FPS = 2000.0;
-
-	double best_score = std::numeric_limits<double>::max(), score;
 	SensorMode best_mode;
 
 	LOG(1, "Mode selection for " << mode.ToString());
 	for (const auto &sensor_mode : sensor_modes_)
 	{
-		double reqAr = static_cast<double>(mode.width) / mode.height;
-		double fmtAr = static_cast<double>(sensor_mode.size.width) / sensor_mode.size.height;
+		LOG(1, "    " << sensor_mode.ToString());
 
-		// Similar scoring mechanism that our pipeline handler does internally.
-		score = scoreFormat(mode.width, sensor_mode.size.width);
-		score += scoreFormat(mode.height, sensor_mode.size.height);
-		score += penalty_AR * scoreFormat(reqAr, fmtAr);
-		if (mode.framerate)
-			score += penalty_FPS * std::abs(mode.framerate - std::min(sensor_mode.fps, mode.framerate));
-		score += penalty_BD * abs((int)(mode.bit_depth - sensor_mode.depth()));
-
-		if (score <= best_score)
+		/* Since the frame rate obtained from the device deviates slightly from
+		 * what was expected, we will compare them taking the error into account. */
+		if ((mode.width == sensor_mode.size.width) &&
+			(mode.height == sensor_mode.size.height) &&
+			(std::fabs(mode.framerate - sensor_mode.fps) < 0.1f))
 		{
-			best_score = score;
 			best_mode.size = sensor_mode.size;
 			best_mode.format = sensor_mode.format;
-		}
 
-		LOG(1, "    " << sensor_mode.ToString() << " - Score: " << score);
+			LOG(1, "    Best " << sensor_mode.ToString());
+
+			break;
+		}
 	}
 
 	return { best_mode.size.width, best_mode.size.height, best_mode.depth(), mode.packed };
@@ -299,6 +277,9 @@ void RPiCamApp::ConfigureViewfinder()
 	auto area = camera_->properties().get(properties::PixelArrayActiveAreas);
 	if (options_->viewfinder_width && options_->viewfinder_height)
 		size = Size(options_->viewfinder_width, options_->viewfinder_height);
+	Size isp_size(size.width, size.height);
+	if (options_->isp_width && options_->isp_height)
+		isp_size = Size(options_->isp_width, options_->isp_height);
 	else if (area)
 	{
 		// The idea here is that most sensors will have a 2x2 binned mode that
@@ -328,7 +309,7 @@ void RPiCamApp::ConfigureViewfinder()
 	} else {
 	   configuration_->at(0).pixelFormat = libcamera::formats::YUV420;
 	}
-	configuration_->at(0).size = size;
+	configuration_->at(0).size = isp_size;
 	if (options_->viewfinder_buffer_count > 0)
 		configuration_->at(0).bufferCount = options_->viewfinder_buffer_count;
 
@@ -348,6 +329,11 @@ void RPiCamApp::ConfigureViewfinder()
 	{
 		options_->viewfinder_mode.update(size, options_->framerate);
 		options_->viewfinder_mode = selectMode(options_->viewfinder_mode);
+		if ((options_->viewfinder_mode.width == 0) || (options_->viewfinder_mode.height == 0))
+		{
+			LOG(1, "Invalid viewfinder_mode");
+			return;
+		}
 
 		configuration_->at(raw_stream_num).size = options_->viewfinder_mode.Size();
 		configuration_->at(raw_stream_num).pixelFormat = mode_to_pixel_format(options_->viewfinder_mode);

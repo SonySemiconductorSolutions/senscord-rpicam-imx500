@@ -477,4 +477,23 @@ struct senscord_camera_auto_exposure_metering_property_t {
   senscord_rectangle_region_parameter_t window;
 };
 
+/**
+ * CameraImageProperty
+ * @see senscord::kCameraImagePropertyKey
+ */
+#define SENSCORD_CAMERA_IMAGE_PROPERTY_KEY \
+  "camera_image_property"
+
+/**
+ * @brief Property for raw image data.
+ * @see senscord::CameraImageProperty
+ */
+struct senscord_camera_image_property_t {
+  uint32_t width;         /**< Image width. */
+  uint32_t height;        /**< Image height. */
+  uint32_t stride_bytes;  /**< Image stride. */
+  /** The format of a pixel. */
+  char pixel_format[SENSCORD_PIXEL_FORMAT_LENGTH];
+};
+
 #endif /*  SENSCORD_INFERENCE_STREAM_C_API_PROPERTY_C_TYPES_H_ */
