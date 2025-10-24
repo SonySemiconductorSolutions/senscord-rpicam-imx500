@@ -8,83 +8,57 @@
 #pragma once
 
 #include <cstdio>
-
 #include <string>
 
+#include "core/logging.hpp"
 #include "options.hpp"
 
-struct Bitrate
-{
-public:
-	Bitrate() : bps_(0) {}
+struct Bitrate {
+ public:
+  Bitrate() : bps_(0) {}
 
-	void set(const std::string &s)
-	{
-		static const std::map<std::string, uint64_t> match
-		{
-			{ "bps", 1 },
-			{ "b", 1 },
-			{ "kbps", 1000 },
-			{ "k", 1000 },
-			{ "K", 1000 },
-			{ "mbps", 1000 * 1000 },
-			{ "m", 1000 * 1000 },
-			{ "M", 1000 },
-		};
+  void set(const std::string &s) {
+    static const std::map<std::string, uint64_t> match{
+        {"bps", 1},         {"b", 1},    {"kbps", 1000},
+        {"k", 1000},        {"K", 1000}, {"mbps", 1000 * 1000},
+        {"m", 1000 * 1000}, {"M", 1000},
+    };
 
-		try
-		{
-			std::size_t end_pos;
-			float f = std::stof(s, &end_pos);
-			bps_ = f;
+    try {
+      std::size_t end_pos;
+      float f = std::stof(s, &end_pos);
+      bps_    = f;
 
-			for (const auto &m : match)
-			{
-				auto found = s.find(m.first, end_pos);
-				if (found != end_pos || found + m.first.length() != s.length())
-					continue;
-				bps_ = f * m.second;
-				break;
-			}
-		}
-		catch (std::exception const &e)
-		{
-			throw std::runtime_error("Invalid bitrate string provided");
-		}
-	}
+      for (const auto &m : match) {
+        auto found = s.find(m.first, end_pos);
+        if (found != end_pos || found + m.first.length() != s.length())
+          continue;
+        bps_ = f * m.second;
+        break;
+      }
+    } catch (std::exception const &e) {
+      throw std::runtime_error("Invalid bitrate string provided");
+    }
+  }
 
-	uint64_t bps() const
-	{
-		return bps_;
-	}
+  uint64_t bps() const { return bps_; }
 
-	uint64_t kbps() const
-	{
-		return bps_ / 1000;
-	}
+  uint64_t kbps() const { return bps_ / 1000; }
 
-	uint64_t mbps() const
-	{
-		return bps_ / (1000 * 1000);
-	}
+  uint64_t mbps() const { return bps_ / (1000 * 1000); }
 
-	explicit constexpr operator bool() const
-	{
-		return !!bps_;
-	}
+  explicit constexpr operator bool() const { return !!bps_; }
 
-private:
-	uint64_t bps_;
+ private:
+  uint64_t bps_;
 };
 
-struct VideoOptions : public Options
-{
-	VideoOptions() : Options()
-	{
-		using namespace boost::program_options;
-		// Generally we shall use zero or empty values to avoid over-writing the
-		// codec's default behaviour.
-		// clang-format off
+struct VideoOptions : public Options {
+  VideoOptions() : Options() {
+    using namespace boost::program_options;
+    // Generally we shall use zero or empty values to avoid over-writing the
+    // codec's default behaviour.
+    // clang-format off
 		options_.add_options()
 			("bitrate,b", value<std::string>(&bitrate_)->default_value("0bps"),
 			 "Set the video bitrate for encoding. If no units are provided, default to bits/second.")
@@ -164,119 +138,118 @@ struct VideoOptions : public Options
 			 ("sync", value<std::string>(&sync_)->default_value("off"),
 			  "Whether to synchronise with another camera. Use \"off\", \"server\" or \"client\".")
 			;
-		// clang-format on
-	}
+    // clang-format on
+  }
 
-	Bitrate bitrate;
-	std::string profile;
-	std::string level;
-	unsigned int intra;
-	bool inline_headers;
-	std::string codec;
-	std::string libav_video_codec;
-	std::string libav_video_codec_opts;
-	std::string libav_format;
-	bool libav_audio;
-	std::string audio_codec;
-	std::string audio_device;
-	std::string audio_source;
-	uint32_t audio_channels;
-	Bitrate audio_bitrate;
-	uint32_t audio_samplerate;
-	TimeVal<std::chrono::microseconds> av_sync;
-	std::string save_pts;
-	int quality;
-	bool listen;
-	bool keypress;
-	bool signal;
-	std::string initial;
-	bool pause;
-	bool split;
-	uint32_t segment;
-	size_t circular;
-	uint32_t frames;
-	bool low_latency;
-	uint32_t sync;
+  Bitrate bitrate;
+  std::string profile;
+  std::string level;
+  unsigned int intra;
+  bool inline_headers;
+  std::string codec;
+  std::string libav_video_codec;
+  std::string libav_video_codec_opts;
+  std::string libav_format;
+  bool libav_audio;
+  std::string audio_codec;
+  std::string audio_device;
+  std::string audio_source;
+  uint32_t audio_channels;
+  Bitrate audio_bitrate;
+  uint32_t audio_samplerate;
+  TimeVal<std::chrono::microseconds> av_sync;
+  std::string save_pts;
+  int quality;
+  bool listen;
+  bool keypress;
+  bool signal;
+  std::string initial;
+  bool pause;
+  bool split;
+  uint32_t segment;
+  size_t circular;
+  uint32_t frames;
+  bool low_latency;
+  uint32_t sync;
 
-	virtual bool Parse(int argc, char *argv[]) override
-	{
-		if (Options::Parse(argc, argv) == false)
-			return false;
+  virtual bool Parse(int argc, char *argv[]) override {
+    if (Options::Parse(argc, argv) == false) return false;
 
-		bitrate.set(bitrate_);
+    bitrate.set(bitrate_);
 #if LIBAV_PRESENT
-		av_sync.set(av_sync_);
-		audio_bitrate.set(audio_bitrate_);
+    av_sync.set(av_sync_);
+    audio_bitrate.set(audio_bitrate_);
 #endif /* LIBAV_PRESENT */
-		if (width == 0)
-			width = 640;
-		if (height == 0)
-			height = 480;
-		if (strcasecmp(codec.c_str(), "h264") == 0)
-			codec = "h264";
-		else if (strcasecmp(codec.c_str(), "libav") == 0)
-			codec = "libav";
-		else if (strcasecmp(codec.c_str(), "yuv420") == 0)
-			codec = "yuv420";
-		else if (strcasecmp(codec.c_str(), "mjpeg") == 0)
-			codec = "mjpeg";
-		else
-			throw std::runtime_error("unrecognised codec " + codec);
-		if (strcasecmp(initial.c_str(), "pause") == 0)
-			pause = true;
-		else if (strcasecmp(initial.c_str(), "record") == 0)
-			pause = false;
-		else
-			throw std::runtime_error("incorrect initial value " + initial);
-		if ((pause || split || segment || circular) && !inline_headers)
-			LOG_ERROR("WARNING: consider inline headers with 'pause'/split/segment/circular");
-		if ((split || segment) && output.find('%') == std::string::npos)
-			LOG_ERROR("WARNING: expected % directive in output filename");
+    if (width == 0) width = 640;
+    if (height == 0) height = 480;
+    if (strcasecmp(codec.c_str(), "h264") == 0)
+      codec = "h264";
+    else if (strcasecmp(codec.c_str(), "libav") == 0)
+      codec = "libav";
+    else if (strcasecmp(codec.c_str(), "yuv420") == 0)
+      codec = "yuv420";
+    else if (strcasecmp(codec.c_str(), "mjpeg") == 0)
+      codec = "mjpeg";
+    else
+      throw std::runtime_error("unrecognised codec " + codec);
+    if (strcasecmp(initial.c_str(), "pause") == 0)
+      pause = true;
+    else if (strcasecmp(initial.c_str(), "record") == 0)
+      pause = false;
+    else
+      throw std::runtime_error("incorrect initial value " + initial);
+    if ((pause || split || segment || circular) && !inline_headers)
+      LOG_ERROR(
+          "WARNING: consider inline headers with "
+          "'pause'/split/segment/circular");
+    if ((split || segment) && output.find('%') == std::string::npos)
+      LOG_ERROR("WARNING: expected % directive in output filename");
 
-		// From https://en.wikipedia.org/wiki/Advanced_Video_Coding#Levels
-		double mbps = ((width + 15) >> 4) * ((height + 15) >> 4) * framerate.value_or(DEFAULT_FRAMERATE);
-		if ((codec == "h264" || (codec == "libav" && libav_video_codec == "libx264")) && mbps > 245760.0)
-		{
-			LOG(1, "Overriding H.264 level 4.2");
-			level = "4.2";
-		}
+    // From https://en.wikipedia.org/wiki/Advanced_Video_Coding#Levels
+    double mbps = ((width + 15) >> 4) * ((height + 15) >> 4) *
+                  framerate.value_or(DEFAULT_FRAMERATE);
+    if ((codec == "h264" ||
+         (codec == "libav" && libav_video_codec == "libx264")) &&
+        mbps > 245760.0) {
+      LOG(1, "Overriding H.264 level 4.2");
+      level = "4.2";
+    }
 
-		if (strcasecmp(sync_.c_str(), "off") == 0)
-			sync = 0;
-		else if (strcasecmp(sync_.c_str(), "server") == 0)
-			sync = 1;
-		else if (strcasecmp(sync_.c_str(), "client") == 0)
-			sync = 2;
-		else
-			throw std::runtime_error("incorrect sync value " + sync_);
+    if (strcasecmp(sync_.c_str(), "off") == 0)
+      sync = 0;
+    else if (strcasecmp(sync_.c_str(), "server") == 0)
+      sync = 1;
+    else if (strcasecmp(sync_.c_str(), "client") == 0)
+      sync = 2;
+    else
+      throw std::runtime_error("incorrect sync value " + sync_);
 
-		return true;
-	}
-	virtual void Print() const override
-	{
-		Options::Print();
-		std::cerr << "    bitrate: " << bitrate.kbps() << "kbps" << std::endl;
-		std::cerr << "    profile: " << profile << std::endl;
-		std::cerr << "    level:  " << level << std::endl;
-		std::cerr << "    intra: " << intra << std::endl;
-		std::cerr << "    inline: " << inline_headers << std::endl;
-		std::cerr << "    save-pts: " << save_pts << std::endl;
-		std::cerr << "    codec: " << codec << std::endl;
-		std::cerr << "    quality (for MJPEG): " << quality << std::endl;
-		std::cerr << "    keypress: " << keypress << std::endl;
-		std::cerr << "    signal: " << signal << std::endl;
-		std::cerr << "    initial: " << initial << std::endl;
-		std::cerr << "    split: " << split << std::endl;
-		std::cerr << "    segment: " << segment << std::endl;
-		std::cerr << "    circular: " << circular << std::endl;
-		std::cerr << "    sync: " << sync << std::endl;
-	}
+    return true;
+  }
+  virtual void Print() const override {
+    Options::Print();
+    std::cerr << "    bitrate: " << bitrate.kbps() << "kbps" << std::endl;
+    std::cerr << "    profile: " << profile << std::endl;
+    std::cerr << "    level:  " << level << std::endl;
+    std::cerr << "    intra: " << intra << std::endl;
+    std::cerr << "    inline: " << inline_headers << std::endl;
+    std::cerr << "    save-pts: " << save_pts << std::endl;
+    std::cerr << "    codec: " << codec << std::endl;
+    std::cerr << "    quality (for MJPEG): " << quality << std::endl;
+    std::cerr << "    keypress: " << keypress << std::endl;
+    std::cerr << "    signal: " << signal << std::endl;
+    std::cerr << "    initial: " << initial << std::endl;
+    std::cerr << "    split: " << split << std::endl;
+    std::cerr << "    segment: " << segment << std::endl;
+    std::cerr << "    circular: " << circular << std::endl;
+    std::cerr << "    sync: " << sync << std::endl;
+  }
 
-private:
-	std::string bitrate_;
+ private:
+  std::string bitrate_;
 #if LIBAV_PRESENT
-	std::string av_sync_;
-	std::string audio_bitrate_;
+  std::string av_sync_;
+  std::string audio_bitrate_;
 #endif /* LIBAV_PRESENT */
-	std::string sync_;
+  std::string sync_;
 };

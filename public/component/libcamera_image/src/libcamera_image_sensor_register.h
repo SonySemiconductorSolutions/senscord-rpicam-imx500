@@ -16,12 +16,12 @@ namespace senscord {
 namespace libcamera_image {
 
 /* Temperature */
-const uint16_t kRegTemperatureEnable = 0x0138U;   // Temperature Enable Register
-const uint16_t kRegTemperatureValue = 0x013AU;    // Temperature Register
+const uint16_t kRegTemperatureEnable = 0x0138U;  // Temperature Enable Register
+const uint16_t kRegTemperatureValue  = 0x013AU;  // Temperature Register
 
 const uint8_t kRegTemperatureEnableMask = 0x01U;  // Temperature Enable Mask
-const int8_t kRegTemperatureMin = -20;  // Minimum Temperature Value
-const int8_t kRegTemperatureMax = 80;   // Maximum Temperature Value
+const int8_t kRegTemperatureMin         = -20;    // Minimum Temperature Value
+const int8_t kRegTemperatureMax         = 80;     // Maximum Temperature Value
 
 /* Rotation */
 const uint16_t kRegImageRotate = 0xD680U;  // Image Rotation Register
@@ -54,12 +54,14 @@ class SensorRegister {
   /**
    * @brief Read register value from image sensor.
    */
-  senscord::Status ReadRegister(const uint16_t reg, uint8_t* value, size_t len = 1);
-  
+  senscord::Status ReadRegister(const uint16_t reg, uint8_t* value,
+                                size_t len = 1);
+
   /**
    * @brief Write register value to image sensor.
    */
-  senscord::Status WriteRegister(const uint16_t reg, const uint8_t* value, size_t len = 1);
+  senscord::Status WriteRegister(const uint16_t reg, const uint8_t* value,
+                                 size_t len = 1);
 
   /**
    * @brief Check to enable access
@@ -80,8 +82,8 @@ class SensorRegister {
 
  private:
   const uint8_t kDeviceAddress = 0x1A;  // I2C address of IMX500
-  const uint8_t kRegAddrSize = 2;       // 2 bytes
-  const uint8_t kBufLimit = 32;         // I2C buffer size limitation
+  const uint8_t kRegAddrSize   = 2;     // 2 bytes
+  const uint8_t kBufLimit      = 32;    // I2C buffer size limitation
   static std::mutex mutex_access_;
   static bool enable_access_;
   int handle_;

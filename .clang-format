@@ -1,4 +1,37 @@
+# Base configuration
 BasedOnStyle: Google
-# Force pointer alignment to right
-DerivePointerAlignment: false
+
+# 14.4. Function Declarations and Definitions
+# Rule content is omitted
+# When true, wrapping is performed based on the maximum number of characters per line
+BinPackParameters: true
+
+# 14.11. Boolean Expressions
+# When boolean expressions exceed the standard line length, maintain consistency in line breaking.
+BreakBeforeBinaryOperators: None
+
+# 14.1. Line Length
+# Each line of code should be at most 80 characters long.
+ColumnLimit: 80
+
+# 14.14. Preprocessor Directives
+# The # used in preprocessor directives must always be at the beginning of the line.
+IndentPPDirectives: None
+
+# 14.7. Function Calls
+# Rule content is omitted
+# Note: The value is the penalty for line breaks after the opening parenthesis of function calls, the number is tentative
+PenaltyBreakBeforeFirstCallParameter: 19
+
+# 14.10. Pointer and Reference Expressions
+# Do not use spaces around period or arrow operators. Do not use spaces after pointer operators.
+# Note: May apply only to variable definitions, needs investigation
 PointerAlignment: Right
+
+# 14.3. Spaces vs. Tabs
+# Use spaces only. Use 2 spaces for each indent.
+TabWidth: 2
+UseTab: Never
+#
+AlignConsecutiveAssignments: true
+AlignConsecutiveMacros: true

@@ -14,10 +14,8 @@
 #include <queue>
 
 #include "core/completed_request.hpp"
-#include "core/logging.hpp"
 
-namespace libcamera
-{
+namespace libcamera {
 struct StreamConfiguration;
 }
 
@@ -26,70 +24,69 @@ class RPiCamApp;
 using namespace std::chrono_literals;
 class PostProcessingStage;
 using PostProcessorCallback = std::function<void(CompletedRequestPtr &)>;
-using StreamConfiguration = libcamera::StreamConfiguration;
+using StreamConfiguration   = libcamera::StreamConfiguration;
 typedef std::unique_ptr<PostProcessingStage> StagePtr;
 
 // Dynamic postprocessing library helper.
-class PostProcessingLib
-{
-public:
-	PostProcessingLib(const std::string &lib);
-	PostProcessingLib(PostProcessingLib &&other);
-	PostProcessingLib(const PostProcessingLib &other) = delete;
-	PostProcessingLib &operator=(const PostProcessingLib &other) = delete;
-	~PostProcessingLib();
+class PostProcessingLib {
+ public:
+  PostProcessingLib(const std::string &lib);
+  PostProcessingLib(PostProcessingLib &&other);
+  PostProcessingLib(const PostProcessingLib &other)            = delete;
+  PostProcessingLib &operator=(const PostProcessingLib &other) = delete;
+  ~PostProcessingLib();
 
-	const void *GetSymbol(const std::string &symbol);
+  const void *GetSymbol(const std::string &symbol);
 
-private:
-	void *lib_ = nullptr;
-	std::map<std::string, const void *> symbol_map_;
-	std::mutex lock_;
+ private:
+  void *lib_ = nullptr;
+  std::map<std::string, const void *> symbol_map_;
+  std::mutex lock_;
 };
 
-class PostProcessor
-{
-public:
-	PostProcessor(RPiCamApp *app);
+class PostProcessor {
+ public:
+  PostProcessor(RPiCamApp *app);
 
-	~PostProcessor();
+  ~PostProcessor();
 
-	void LoadModules(const std::string &lib_dir);
+  void LoadModules(const std::string &lib_dir);
 
-	void Read(std::string const &filename);
+  void Read(std::string const &filename);
 
-	void SetCallback(PostProcessorCallback callback);
+  void SetCallback(PostProcessorCallback callback);
 
-	void AdjustConfig(std::string const &use_case, StreamConfiguration *config);
+  void AdjustConfig(std::string const &use_case, StreamConfiguration *config);
 
-	void Configure();
+  void Configure();
 
-	void Start();
+  void Start();
 
-	void Process(CompletedRequestPtr &request);
+  void Process(CompletedRequestPtr &request);
 
-	void Stop();
+  void Stop();
 
-	void Teardown();
+  void Teardown();
 
-	void RotateInputTensor(const unsigned int angle);
+  void RotateInputTensor(const unsigned int angle);
 
-	void FlipInputTensor(const unsigned int flip);
+  void FlipInputTensor(const unsigned int flip);
 
-    void SetInferenceRoiAbs(const libcamera::Rectangle &roi_) const;
-private:
-	PostProcessingStage *createPostProcessingStage(char const *name);
+  void SetInferenceRoiAbs(const libcamera::Rectangle &roi_) const;
 
-	RPiCamApp *app_;
-	std::vector<StagePtr> stages_;
-	std::vector<PostProcessingLib> dynamic_stages_;
-	void outputThread();
+ private:
+  PostProcessingStage *createPostProcessingStage(char const *name);
 
-	std::queue<CompletedRequestPtr> requests_;
-	std::queue<std::future<bool>> futures_;
-	std::thread output_thread_;
-	bool quit_;
-	PostProcessorCallback callback_;
-	std::mutex mutex_;
-	std::condition_variable cv_;
+  RPiCamApp *app_;
+  std::vector<StagePtr> stages_;
+  std::vector<PostProcessingLib> dynamic_stages_;
+  void outputThread();
+
+  std::queue<CompletedRequestPtr> requests_;
+  std::queue<std::future<bool>> futures_;
+  std::thread output_thread_;
+  bool quit_;
+  PostProcessorCallback callback_;
+  std::mutex mutex_;
+  std::condition_variable cv_;
 };

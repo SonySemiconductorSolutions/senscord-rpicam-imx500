@@ -13,26 +13,26 @@
 #include <string>
 #include <vector>
 
-#include "v4l2_ctrl_manager.h"
 #include "core/options.hpp"
 #include "core/rpicam_app.hpp"
-#include "senscord/libcamera_image/libcamera_image_types.h"
 #include "libcamera_image_sensor_register.h"
+#include "senscord/libcamera_image/libcamera_image_types.h"
+#include "v4l2_ctrl_manager.h"
 
-#define AITRIOS_SENSOR_CHANNEL_ID_INFERENCE_OUTPUT (0x00000000)
+#define AITRIOS_SENSOR_CHANNEL_ID_INFERENCE_OUTPUT      (0x00000000)
 #define AITRIOS_SENSOR_CHANNEL_ID_INFERENCE_INPUT_IMAGE (0x00000001)
-#define AITRIOS_SENSOR_CHANNEL_ID_INFERENCE_RAW_IMAGE (0x80000000)
-#define IMX500_FULL_RESOLUTION_WIDTH (4056)
-#define IMX500_FULL_RESOLUTION_HEIGHT (3040)
-#define MAX_NUM_DROP_FRAMES (7)
-#define AE_FLICKER_PERIOD_50HZ ("20000us")
-#define AE_FLICKER_PERIOD_60HZ ("16667us")
-#define CAMERA_IMAGE_WIDTH_DEFAULT (2028) /* pixel */
-#define CAMERA_IMAGE_HEIGHT_DEFAULT (1520) /* pixel */
-#define CAMERA_FRAME_RATE_DEFAULT (30.f) /* fps */
-#define CAMERA_FRAME_RATE_DENOM_DEFAULT (1.001f)
-#define MODEL_ID_CONVERTER_VERSION_IT_ONLY ("000000")
-#define MODEL_ID_VERSION_NUMBER_IT_ONLY ("0000")
+#define AITRIOS_SENSOR_CHANNEL_ID_INFERENCE_RAW_IMAGE   (0x80000000)
+#define IMX500_FULL_RESOLUTION_WIDTH                    (4056)
+#define IMX500_FULL_RESOLUTION_HEIGHT                   (3040)
+#define MAX_NUM_DROP_FRAMES                             (7)
+#define AE_FLICKER_PERIOD_50HZ                          ("20000us")
+#define AE_FLICKER_PERIOD_60HZ                          ("16667us")
+#define CAMERA_IMAGE_WIDTH_DEFAULT                      (2028) /* pixel */
+#define CAMERA_IMAGE_HEIGHT_DEFAULT                     (1520) /* pixel */
+#define CAMERA_FRAME_RATE_DEFAULT                       (30.f) /* fps */
+#define CAMERA_FRAME_RATE_DENOM_DEFAULT                 (1.001f)
+#define MODEL_ID_CONVERTER_VERSION_IT_ONLY              ("000000")
+#define MODEL_ID_VERSION_NUMBER_IT_ONLY                 ("0000")
 
 namespace libcamera {
 class CameraManager;
@@ -56,11 +56,11 @@ class PixelFormat;
 //   - tensorDataNum gives the number of elements in each output tensor,
 //   - numDimensions gives the dimensionality of each output tensor,
 //   - size gives the size of each dimension in each output tensor.
-static constexpr unsigned int NetworkNameLen = 64;
-static constexpr unsigned int MaxNumTensors = 16;
-static constexpr unsigned int MaxNumDimensions = 16;
-static constexpr char AiBundleIdItonly[] = "999997";
-static constexpr char AiBundleIdVgaRgbItonly[] = "999999";
+static constexpr unsigned int NetworkNameLen         = 64;
+static constexpr unsigned int MaxNumTensors          = 16;
+static constexpr unsigned int MaxNumDimensions       = 16;
+static constexpr char AiBundleIdItonly[]             = "999997";
+static constexpr char AiBundleIdVgaRgbItonly[]       = "999999";
 static constexpr char CustomVgaItonlyParamJsonFile[] = "custom_vga_itonly.json";
 
 struct OutputTensorInfo {
@@ -168,7 +168,8 @@ class LibcameraAdapter {
                                     uint32_t id);
 
   void RequestComplete(libcamera::Request *request);
-  void GetFrames(std::vector<senscord::FrameInfo> *frames, bool dry_run=false);
+  void GetFrames(std::vector<senscord::FrameInfo> *frames,
+                 bool dry_run = false);
   senscord::Status ReleaseFrame(
       const senscord::FrameInfo &frameinfo,
       const std::vector<uint32_t> *referenced_channel_ids);
@@ -198,38 +199,24 @@ class LibcameraAdapter {
 
   senscord::Status GetAIModelVersion(std::string &ai_model_version);
   senscord::Status SetExposureMode(ExposureModeParam mode);
-  senscord::Status SetAutoExposureParam(
-      uint32_t &max_exposure_time,
-      uint32_t &min_exposure_time,
-      float &max_gain,
-      uint32_t &convergence_speed);
+  senscord::Status SetAutoExposureParam(uint32_t &max_exposure_time,
+                                        uint32_t &min_exposure_time,
+                                        float &max_gain,
+                                        uint32_t &convergence_speed);
   senscord::Status SetAeEvCompensation(float &ev_compensation);
   senscord::Status SetAeAntiFlickerMode(AeAntiFlickerMode mode);
-  senscord::Status SetAeMetering(
-      AeMeteringMode mode,
-      AeMeteringWindow &window);
-  senscord::Status SetManualExposureParam(
-      uint32_t exposure_time,
-      float gain);
+  senscord::Status SetAeMetering(AeMeteringMode mode, AeMeteringWindow &window);
+  senscord::Status SetManualExposureParam(uint32_t exposure_time, float gain);
   senscord::Status SetImageSize(uint32_t width, uint32_t height);
   senscord::Status SetFrameRate(uint32_t num, uint32_t denom);
-  senscord::Status SetImageFlip(
-    bool flip_horizontal,
-    bool flip_vertical);
-  senscord::Status SetImageCrop(
-      uint32_t left,
-      uint32_t top,
-      uint32_t width,
-      uint32_t height);
-  senscord::Status SetCameraImage(
-      uint32_t width,
-      uint32_t height,
-      char *pixel_format);
-  senscord::Status GetCameraImage(
-      uint32_t &width,
-      uint32_t &height,
-      uint32_t &stride_bytes,
-      char *pixel_format);
+  senscord::Status SetImageFlip(bool flip_horizontal, bool flip_vertical);
+  senscord::Status SetImageCrop(uint32_t left, uint32_t top, uint32_t width,
+                                uint32_t height);
+  senscord::Status SetIspImage(uint32_t width, uint32_t height,
+                               char *pixel_format);
+  senscord::Status GetIspImage(uint32_t &width, uint32_t &height,
+                               uint32_t &stride_bytes, char *pixel_format);
+  senscord::Status SetIspFrameRate(uint32_t num, uint32_t denom);
 
   // for internal use
   senscord::Status SetLibcameraControl(
@@ -264,12 +251,10 @@ class LibcameraAdapter {
 
  private:
   bool CheckBundleIdItOnly(const std::string ai_model_bundle_id);
-  std::string ReplaceCustomJsonPathString(
-      const std::string &path,
-      const std::string &replacement);
-  std::string HandleCustomJsonPathString(
-      const std::string &post_process_file,
-      const std::string &ai_model_bundle_id);
+  std::string ReplaceCustomJsonPathString(const std::string &path,
+                                          const std::string &replacement);
+  std::string HandleCustomJsonPathString(const std::string &post_process_file,
+                                         const std::string &ai_model_bundle_id);
   std::string ReadPostProcessJsonString(const std::string &post_process_file);
   std::string GetRpkPath(const std::string &json_str);
   bool CheckRpkExist(const std::string &post_process_file);
@@ -277,9 +262,10 @@ class LibcameraAdapter {
   bool ReadInputTensorSize(const std::string &post_process_file);
   uint32_t ConvertCropHorizontalToSensor(uint32_t target);
   uint32_t ConvertCropVerticalToSensor(uint32_t target);
-  bool IsNoCrop(uint32_t crop_left, uint32_t crop_top, uint32_t crop_width, uint32_t crop_height);
-  bool IsValidCropRange(
-      uint32_t crop_left, uint32_t crop_top, uint32_t crop_width, uint32_t crop_height);
+  bool IsNoCrop(uint32_t crop_left, uint32_t crop_top, uint32_t crop_width,
+                uint32_t crop_height);
+  bool IsValidCropRange(uint32_t crop_left, uint32_t crop_top,
+                        uint32_t crop_width, uint32_t crop_height);
   bool UpdateImageCrop(void);
 
  private:
@@ -327,10 +313,11 @@ class LibcameraAdapter {
   ImageCrop image_crop_;
   bool no_image_crop_;
   bool is_running_;
-  uint32_t camera_image_width_;
-  uint32_t camera_image_height_;
+  uint32_t isp_image_width_;
+  uint32_t isp_image_height_;
   uint32_t camera_image_stride_bytes_;
-  std::string camera_image_pixel_format_;
+  std::string isp_image_pixel_format_;
+  float isp_frame_rate_;
 
   void UpdateTensorShapesProperty(CompletedRequestPtr payload);
   void UpdateImageRotationProperty(void);

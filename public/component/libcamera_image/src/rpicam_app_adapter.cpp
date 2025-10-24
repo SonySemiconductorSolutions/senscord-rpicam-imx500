@@ -15,10 +15,10 @@
 #include <libcamera/property_ids.h>
 #include <libcamera/stream.h>
 #include <libcamera/transform.h>
+#include <sys/ioctl.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <sys/types.h>
-#include <sys/ioctl.h>
 #include <unistd.h>
 
 #include <array>
@@ -74,8 +74,8 @@ LibcameraAdapter::LibcameraAdapter()
       libcam_(nullptr),
       options_(nullptr),
       it_image_property_(nullptr),
-      base_image_property_({CAMERA_IMAGE_WIDTH_DEFAULT,
-                           CAMERA_IMAGE_HEIGHT_DEFAULT, 0, ""}),
+      base_image_property_(
+          {CAMERA_IMAGE_WIDTH_DEFAULT, CAMERA_IMAGE_HEIGHT_DEFAULT, 0, ""}),
       sensor_output_{0, 0, IMX500_FULL_RESOLUTION_WIDTH,
                      IMX500_FULL_RESOLUTION_HEIGHT},
       norm_val_{0, 0, 0, 0},
@@ -88,15 +88,17 @@ LibcameraAdapter::LibcameraAdapter()
       device_name_(""),
       ai_model_bundle_id_(std::string(AiBundleIdItonly)),
       count_drop_frames_(0),
-      camera_image_width_(CAMERA_IMAGE_WIDTH_DEFAULT),
-      camera_image_height_(CAMERA_IMAGE_HEIGHT_DEFAULT),
+      isp_image_width_(CAMERA_IMAGE_WIDTH_DEFAULT),
+      isp_image_height_(CAMERA_IMAGE_HEIGHT_DEFAULT),
+      isp_frame_rate_(CAMERA_FRAME_RATE_DEFAULT /
+                      CAMERA_FRAME_RATE_DENOM_DEFAULT),
       camera_image_size_width_(CAMERA_IMAGE_WIDTH_DEFAULT),
       camera_image_size_height_(CAMERA_IMAGE_HEIGHT_DEFAULT),
-      camera_frame_rate_(
-          CAMERA_FRAME_RATE_DEFAULT / CAMERA_FRAME_RATE_DENOM_DEFAULT),
+      camera_frame_rate_(CAMERA_FRAME_RATE_DEFAULT /
+                         CAMERA_FRAME_RATE_DENOM_DEFAULT),
       image_flip_{false, false},
-      image_crop_{
-          0, 0, CAMERA_IMAGE_WIDTH_DEFAULT, CAMERA_IMAGE_HEIGHT_DEFAULT},
+      image_crop_{0, 0, CAMERA_IMAGE_WIDTH_DEFAULT,
+                  CAMERA_IMAGE_HEIGHT_DEFAULT},
       no_image_crop_{true},
       is_running_(false) {}
 LibcameraAdapter::~LibcameraAdapter() {}
@@ -106,23 +108,23 @@ senscord::Status LibcameraAdapter::Open(
     senscord::ImageProperty &image_property) {
   std::lock_guard<std::mutex> lock(LibcameraAdapter::mutex_camera_manager_);
 
-  exposure_mode_ = kExposureModeParamAuto;
-  manual_exposure_.keep = false;
+  exposure_mode_                 = kExposureModeParamAuto;
+  manual_exposure_.keep          = false;
   manual_exposure_.exposure_time = 0;
-  manual_exposure_.gain = 0.0;
-  util_ = util;
-  device_name_ = device_name;
-  libcam_ = new RPiCamApp();
+  manual_exposure_.gain          = 0.0;
+  util_                          = util;
+  device_name_                   = device_name;
+  libcam_                        = new RPiCamApp();
   std::string post_process_file;
-  uint64_t uint_value = 0;
+  uint64_t uint_value      = 0;
   std::string string_value = "";
-  senscord::Status status = senscord::Status::OK();
-  options_ = libcam_->GetOptions();
+  senscord::Status status  = senscord::Status::OK();
+  options_                 = libcam_->GetOptions();
   InitializeOptions(options_);
-  it_image_property_ = new senscord::ImageProperty(image_property);
-  full_image_property_ = new senscord::ImageProperty(image_property);
-  base_image_property_ = image_property;
-  options_->viewfinder_width = 640;
+  it_image_property_          = new senscord::ImageProperty(image_property);
+  full_image_property_        = new senscord::ImageProperty(image_property);
+  base_image_property_        = image_property;
+  options_->viewfinder_width  = 640;
   options_->viewfinder_height = 480;
   options_->post_process_file =
       "/usr/share/rpi-camera-assets/imx500_mobilenet_ssd.json";
@@ -151,14 +153,14 @@ senscord::Status LibcameraAdapter::Open(
       options_->post_process_file = post_process_file;
     }
 
-    post_process_file =
-        HandleCustomJsonPathString(options_->post_process_file, ai_model_bundle_id_);
+    post_process_file = HandleCustomJsonPathString(options_->post_process_file,
+                                                   ai_model_bundle_id_);
     if (post_process_file.length()) {
       options_->post_process_file = post_process_file;
     } else {
-      return SENSCORD_STATUS_FAIL(
-          "libcamera", senscord::Status::kCauseInvalidOperation,
-          "The default JSON file does not exist.");
+      return SENSCORD_STATUS_FAIL("libcamera",
+                                  senscord::Status::kCauseInvalidOperation,
+                                  "The default JSON file does not exist.");
     }
   }
   {
@@ -168,9 +170,11 @@ senscord::Status LibcameraAdapter::Open(
     }
   }
 
-  options_->verbose = 2;
-  options_->denoise = "auto";
-  options_->contrast = 1.0f;
+  isp_image_pixel_format_ = options_->viewfinder_mode_string;
+
+  options_->verbose    = 2;
+  options_->denoise    = "auto";
+  options_->contrast   = 1.0f;
   options_->saturation = 1.0f;
 
   // Parse the JSON file
@@ -260,7 +264,7 @@ senscord::Status LibcameraAdapter::Open(
       // with device_name as index
       try {
         int device_index_ = std::stoi(device_name);
-        camera_ = cameras.at(device_index_ - 1);
+        camera_           = cameras.at(device_index_ - 1);
       } catch (const std::exception &e) {
         // return OK even selected camera is not found.
         return senscord::Status::OK();
@@ -273,7 +277,7 @@ senscord::Status LibcameraAdapter::Open(
   status = reg_handle_.Open();
   if (!status.ok()) {
     SENSCORD_LOG_ERROR_TAGGED("libcamera",
-      "Failed to open image sensor register control.");
+                              "Failed to open image sensor register control.");
     return status;
   }
   reg_handle_.SetEnableAccess(false);
@@ -288,82 +292,82 @@ void LibcameraAdapter::InitializeOptions(Options *&options) {
   // Note: With wasm module, the default values set using boost program_options.
   //       However with AOT file, the boost program_optoins does not work.
   //       As workaround, setting the default values here.
-  options_->help = false;
-  options_->version = false;
+  options_->help         = false;
+  options_->version      = false;
   options_->list_cameras = false;
-  options_->verbose = 0;
+  options_->verbose      = 0;
   // options_->timeout = 0;               // Need to set it to private member
   // std::string config_file;             // No default
   // std::string output;                  // No default
   // std::string post_process_file;       // No default
   // std::string post_process_libs;       // No default
-  options_->width = 0;
-  options_->height = 0;
-  options_->nopreview = true;
-  std::string preview = "0,0,0,0";
-  options_->fullscreen = false;
-  options_->preview_x = 0;
-  options_->preview_y = 0;
-  options_->preview_width = 0;
+  options_->width          = 0;
+  options_->height         = 0;
+  options_->nopreview      = true;
+  std::string preview      = "0,0,0,0";
+  options_->fullscreen     = false;
+  options_->preview_x      = 0;
+  options_->preview_y      = 0;
+  options_->preview_width  = 0;
   options_->preview_height = 0;
   // options_->transform;                 // No default
-  std::string roi = "0,0,0,0";
-  options_->roi_x = 0.0f;
-  options_->roi_y = 0.0f;
-  options_->roi_width = 0.0f;
+  std::string roi      = "0,0,0,0";
+  options_->roi_x      = 0.0f;
+  options_->roi_y      = 0.0f;
+  options_->roi_width  = 0.0f;
   options_->roi_height = 0.0f;
   // options_->shutter = 0;               // In private
-  options_->gain = 0.0f;
-  std::string metering = "centre";
+  options_->gain           = 0.0f;
+  std::string metering     = "centre";
   options_->metering_index = 0;
-  std::string exposure = "normal";
+  std::string exposure     = "normal";
   options_->exposure_index = 0;
-  options_->ev = 0.0f;
-  std::string awb = "auto";
-  options_->awb_index = 0;
-  std::string awbgains = "0,0";
-  options_->awb_gain_r = 0.0f;
-  options_->awb_gain_b = 0.0f;
-  options_->flush = false;
-  options_->wrap = 0;
-  options_->brightness = 0.0f;
-  options_->contrast = 1.0f;
-  options_->saturation = 1.0f;
-  options_->sharpness = 1.0f;
+  options_->ev             = 0.0f;
+  std::string awb          = "auto";
+  options_->awb_index      = 0;
+  std::string awbgains     = "0,0";
+  options_->awb_gain_r     = 0.0f;
+  options_->awb_gain_b     = 0.0f;
+  options_->flush          = false;
+  options_->wrap           = 0;
+  options_->brightness     = 0.0f;
+  options_->contrast       = 1.0f;
+  options_->saturation     = 1.0f;
+  options_->sharpness      = 1.0f;
   // options_->framerate = -1.0f;         // Need to set it to private member
-  std::string denoise = "auto";
-  std::string info_text = "frame";
-  options_->viewfinder_width = 0;
+  std::string denoise         = "auto";
+  std::string info_text       = "frame";
+  options_->viewfinder_width  = 0;
   options_->viewfinder_height = 0;
-  std::string tuning_file = "-";
-  options_->qt_preview = false;
-  options_->lores_width = 0;
-  options_->lores_height = 0;
-  options_->lores_par = false;
-  options_->camera = 0;
+  std::string tuning_file     = "-";
+  options_->qt_preview        = false;
+  options_->lores_width       = 0;
+  options_->lores_height      = 0;
+  options_->lores_par         = false;
+  options_->camera            = 0;
   // std::string mode_string;             // No default
   // Mode mode;                           // No default
   // std::string viewfinder_mode_string;  // No default
   // Mode viewfinder_mode;                // No default
-  options_->buffer_count = 0;
-  options_->viewfinder_buffer_count = 0;
-  std::string afMode = "afMode";
-  options_->afMode_index = 0;
-  std::string afRange = "normal";
-  options_->afRange_index = 0;
-  std::string afSpeed = "normal";
-  options_->afSpeed_index = 0;
-  std::string afWindow = "0,0,0,0";
-  options_->afWindow_x = 0.0f;
-  options_->afWindow_y = 0.0f;
-  options_->afWindow_width = 0.0f;
-  options_->afWindow_height = 0.0f;
-  options_->lens_position = 0.0f;
+  options_->buffer_count              = 0;
+  options_->viewfinder_buffer_count   = 0;
+  std::string afMode                  = "afMode";
+  options_->afMode_index              = 0;
+  std::string afRange                 = "normal";
+  options_->afRange_index             = 0;
+  std::string afSpeed                 = "normal";
+  options_->afSpeed_index             = 0;
+  std::string afWindow                = "0,0,0,0";
+  options_->afWindow_x                = 0.0f;
+  options_->afWindow_y                = 0.0f;
+  options_->afWindow_width            = 0.0f;
+  options_->afWindow_height           = 0.0f;
+  options_->lens_position             = 0.0f;
   options_->set_default_lens_position = false;
-  options_->af_on_capture = false;
+  options_->af_on_capture             = false;
   // std::string metadata;                // No default
   std::string metadata_format = "json";
-  std::string hdr = "off";
+  std::string hdr             = "off";
   // TimeVal<std::chrono::microseconds> flicker_period; // In private
   options_->no_raw = false;
 }
@@ -396,17 +400,18 @@ senscord::Status LibcameraAdapter::Start() {
                                   "Failed to check inference size from rpk.");
     }
 
-    if (!IsValidCropRange(image_crop_.x, image_crop_.y, image_crop_.w, image_crop_.h)) {
-      return SENSCORD_STATUS_FAIL("libcamera", senscord::Status::kCauseOutOfRange,
-                                  "Invalid crop range : x=%d, y=%d, w=%d, h=%d",
-                                  image_crop_.x, image_crop_.y, image_crop_.w, image_crop_.h);
+    if (!IsValidCropRange(image_crop_.x, image_crop_.y, image_crop_.w,
+                          image_crop_.h)) {
+      return SENSCORD_STATUS_FAIL(
+          "libcamera", senscord::Status::kCauseOutOfRange,
+          "Invalid crop range : x=%d, y=%d, w=%d, h=%d", image_crop_.x,
+          image_crop_.y, image_crop_.w, image_crop_.h);
     }
   }
 
   /* Control IMX500 Device Driver(v4l2-subdevice). */
   if (!UpdateImageCrop()) {
-    return SENSCORD_STATUS_FAIL("libcamera",
-                                senscord::Status::kCauseAborted,
+    return SENSCORD_STATUS_FAIL("libcamera", senscord::Status::kCauseAborted,
                                 "Failed to update crop parameters.");
   }
 
@@ -417,7 +422,7 @@ senscord::Status LibcameraAdapter::Start() {
   libcam_->StartCamera();
 
   count_drop_frames_ = 0;
-  is_running_ = true;
+  is_running_        = true;
 
   return senscord::Status::OK();
 }
@@ -452,21 +457,22 @@ senscord::Status LibcameraAdapter::Configure(
     senscord::ImageProperty &image_property) {
   SENSCORD_LOG_INFO_TAGGED("libcamera", "LibcameraAdapter::Configure()");
 
-  /* If InputTensor/OutputTensor output enable after executing STREAM_OFF, reopen device. */
+  /* If InputTensor/OutputTensor output enable after executing STREAM_OFF,
+   * reopen device. */
   senscord::Status status = senscord::Status::OK();
 
   status = Close();
   if (!status.ok()) {
     return SENSCORD_STATUS_FAIL(
-      "libcamera", senscord::Status::kCauseInvalidOperation,
-      "Failed to close camera during reconfiguration");
+        "libcamera", senscord::Status::kCauseInvalidOperation,
+        "Failed to close camera during reconfiguration");
   }
 
   status = Open(device_name_, util_, image_property);
   if (!status.ok()) {
     return SENSCORD_STATUS_FAIL(
-      "libcamera", senscord::Status::kCauseInvalidOperation,
-      "Failed to open the camera during reconfiguration");
+        "libcamera", senscord::Status::kCauseInvalidOperation,
+        "Failed to open the camera during reconfiguration");
   }
 
   if (!camera_) {
@@ -474,13 +480,14 @@ senscord::Status LibcameraAdapter::Configure(
                                 senscord::Status::kCauseInvalidOperation, "");
   }
 
-  options_->no_raw = false;
-  options_->isp_width = camera_image_width_;
-  options_->isp_height = camera_image_height_;
-  options_->viewfinder_width = camera_image_size_width_;
-  options_->viewfinder_height = camera_image_size_height_;
-  options_->framerate = camera_frame_rate_;
-  options_->viewfinder_mode_string = camera_image_pixel_format_;
+  options_->no_raw                 = false;
+  options_->isp_width              = isp_image_width_;
+  options_->isp_height             = isp_image_height_;
+  options_->isp_framerate          = isp_frame_rate_;
+  options_->viewfinder_width       = camera_image_size_width_;
+  options_->viewfinder_height      = camera_image_size_height_;
+  options_->framerate              = camera_frame_rate_;
+  options_->viewfinder_mode_string = isp_image_pixel_format_;
 
   if (image_flip_.h && image_flip_.v) {
     options_->transform = libcamera::Transform::HVFlip;
@@ -499,10 +506,11 @@ senscord::Status LibcameraAdapter::Configure(
 
   if ((options_->viewfinder_mode.width == 0) ||
       (options_->viewfinder_mode.height == 0)) {
-    return SENSCORD_STATUS_FAIL("libcamera",
-                                senscord::Status::kCauseNotSupported,
-                                "Not supported camera param: width %d, height %d, frame_rate %f",
-                                camera_image_size_width_, camera_image_size_height_, camera_frame_rate_);
+    return SENSCORD_STATUS_FAIL(
+        "libcamera", senscord::Status::kCauseNotSupported,
+        "Not supported camera param: width %d, height %d, frame_rate %f",
+        camera_image_size_width_, camera_image_size_height_,
+        camera_frame_rate_);
   }
 
   // todo: add frame_rate, and multi-plane
@@ -532,7 +540,7 @@ senscord::Status LibcameraAdapter::Configure(
                                   senscord::Status::kCauseInvalidArgument, "");
   }
 
-  sensor_output_.width = camera_image_size_width_;
+  sensor_output_.width  = camera_image_size_width_;
   sensor_output_.height = camera_image_size_height_;
 
   return senscord::Status::OK();
@@ -553,15 +561,15 @@ void LibcameraAdapter::RequestComplete(libcamera::Request *request) {
 
   // Copy the frame buffer from the request
   senscord::FrameInfo frame = {};
-  frame.sequence_number = seq_num++;
+  frame.sequence_number     = seq_num++;
   senscord::osal::OSGetTime(&frame.sent_time);
   uint8_t stream_count = 0;
   for (auto buffer_map : request->buffers()) {
     senscord::ChannelRawData rawdata = {};
     rawdata.channel_id = stream_count++;  // senscord::kChannelIdImage(9);
     rawdata.captured_timestamp = frame.sent_time;
-    rawdata.data_type = senscord::kRawDataTypeImage;
-    rawdata.data_offset = 0;
+    rawdata.data_type          = senscord::kRawDataTypeImage;
+    rawdata.data_offset        = 0;
 
     rawdata.data_size = 0;
     for (auto plane : buffer_map.second->planes()) {
@@ -632,24 +640,24 @@ static void YUV420_to_JPEG_fast(const uint8_t *input, int width, int height,
   cinfo.err = jpeg_std_error(&jerr);
   jpeg_create_compress(&cinfo);
 
-  cinfo.image_width = width;
-  cinfo.image_height = height;
+  cinfo.image_width      = width;
+  cinfo.image_height     = height;
   cinfo.input_components = 3;
-  cinfo.in_color_space = JCS_YCbCr;
+  cinfo.in_color_space   = JCS_YCbCr;
   cinfo.restart_interval = restart;
 
   jpeg_set_defaults(&cinfo);
   cinfo.raw_data_in = TRUE;
   jpeg_set_quality(&cinfo, quality, TRUE);
   jpeg_buffer = NULL;
-  enc_len = 0;
+  enc_len     = 0;
   jpeg_mem_dest(&cinfo, &jpeg_buffer, &enc_len);
   jpeg_start_compress(&cinfo, TRUE);
 
-  int stride2 = stride / 2;
-  uint8_t *Y = (uint8_t *)input;
-  uint8_t *U = (uint8_t *)Y + stride * height;
-  uint8_t *V = (uint8_t *)U + stride2 * (height / 2);
+  int stride2    = stride / 2;
+  uint8_t *Y     = (uint8_t *)input;
+  uint8_t *U     = (uint8_t *)Y + stride * height;
+  uint8_t *V     = (uint8_t *)U + stride2 * (height / 2);
   uint8_t *Y_max = U - stride;
   uint8_t *U_max = V - stride2;
   uint8_t *V_max = U_max + stride2 * (height / 2);
@@ -687,9 +695,9 @@ static void pack_rgb888_planar_to_interleaved(uint8_t *planar_data,
   for (int i = 0; i < total_pixels; i++) {
     uint8_t rgb[3] = {r_plane[i], g_plane[i], b_plane[i]};
     for (int j = 0; j < 3; j++) {
-      int32_t sample = static_cast<int32_t>(rgb[j]);
-      sample = (sample << norm_shift_[j]) - norm_val_[j];
-      sample = ((sample << div_shift_) / div_val_[j]) & 0xFF;
+      int32_t sample    = static_cast<int32_t>(rgb[j]);
+      sample            = (sample << norm_shift_[j]) - norm_val_[j];
+      sample            = ((sample << div_shift_) / div_val_[j]) & 0xFF;
       output[i * 3 + j] = static_cast<uint8_t>(sample);
     }
   }
@@ -708,16 +716,16 @@ static void RGB888_to_JPEG_fast(const uint8_t *input, int width, int height,
   jpeg_create_compress(&cinfo);
 
   // Configure basic image properties
-  cinfo.image_width = width;
-  cinfo.image_height = height;
-  cinfo.input_components = 3;      // 3 channels for RGB
-  cinfo.in_color_space = JCS_RGB;  // Set color space to RGB
+  cinfo.image_width      = width;
+  cinfo.image_height     = height;
+  cinfo.input_components = 3;        // 3 channels for RGB
+  cinfo.in_color_space   = JCS_RGB;  // Set color space to RGB
   cinfo.restart_interval = restart;
 
   jpeg_set_defaults(&cinfo);
   jpeg_set_quality(&cinfo, quality, TRUE);
   jpeg_buffer = NULL;
-  enc_len = 0;
+  enc_len     = 0;
 
   // Set the destination to memory buffer
   jpeg_mem_dest(&cinfo, &jpeg_buffer, &enc_len);
@@ -737,8 +745,9 @@ static void RGB888_to_JPEG_fast(const uint8_t *input, int width, int height,
   jpeg_destroy_compress(&cinfo);
 }
 
-void LibcameraAdapter::GetFrames(std::vector<senscord::FrameInfo> *frames, bool dry_run) {
-  static int seq_num = 0;
+void LibcameraAdapter::GetFrames(std::vector<senscord::FrameInfo> *frames,
+                                 bool dry_run) {
+  static int seq_num        = 0;
   senscord::FrameInfo frame = {};
   CompletedRequestPtr payload;
   frame.sequence_number = seq_num++;
@@ -767,9 +776,10 @@ void LibcameraAdapter::GetFrames(std::vector<senscord::FrameInfo> *frames, bool 
         Since the v4l2 kernel driver and libcamera do not support rotation,
         the register is controlled directly.
         However, due to current limitations in libcamera,
-        the register can only be accessed at this timing, so the rotation is set here.
-        As a result, rotation is not set for the first frame, but several frames are discarded for AE/AWB,
-        so images without rotation are not notified to higher layers.
+        the register can only be accessed at this timing, so the rotation is set
+        here. As a result, rotation is not set for the first frame, but several
+        frames are discarded for AE/AWB, so images without rotation are not
+        notified to higher layers.
       */
       UpdateImageRotationProperty();
     }
@@ -789,8 +799,8 @@ void LibcameraAdapter::GetFrames(std::vector<senscord::FrameInfo> *frames, bool 
   uint64_t timestamp = 0;
   senscord::osal::OSGetTime(&timestamp);
 
-  auto output = payload->metadata.get(controls::rpi::CnnOutputTensor);
-  auto input = payload->metadata.get(controls::rpi::CnnInputTensor);
+  auto output      = payload->metadata.get(controls::rpi::CnnOutputTensor);
+  auto input       = payload->metadata.get(controls::rpi::CnnInputTensor);
   auto *input_info = reinterpret_cast<const CnnInputTensorInfo *>(
       payload->metadata.get(controls::rpi::CnnInputTensorInfo)->data());
 
@@ -802,9 +812,9 @@ void LibcameraAdapter::GetFrames(std::vector<senscord::FrameInfo> *frames, bool 
     rawdata1.channel_id =
         AITRIOS_SENSOR_CHANNEL_ID_INFERENCE_OUTPUT;  // senscord::kChannelIdImage(9);
     rawdata1.captured_timestamp = timestamp;
-    rawdata1.data_type = senscord::kRawDataTypeMeta;
-    rawdata1.data_offset = 0;
-    rawdata1.data_size = output_tensor.size() * sizeof(float);
+    rawdata1.data_type          = senscord::kRawDataTypeMeta;
+    rawdata1.data_offset        = 0;
+    rawdata1.data_size          = output_tensor.size() * sizeof(float);
     status = allocator->Allocate(rawdata1.data_size, &rawdata1.data_memory);
     if (!status.ok()) {
       SENSCORD_LOG_ERROR_TAGGED("libcamera",
@@ -827,7 +837,7 @@ void LibcameraAdapter::GetFrames(std::vector<senscord::FrameInfo> *frames, bool 
                                       input->data() + input->size());
     jpeg_mem_len_t enc_len;
     uint8_t *enc_buffer = nullptr;
-    uint8_t *temp = (uint8_t *)malloc(input_tensor.size());
+    uint8_t *temp       = (uint8_t *)malloc(input_tensor.size());
     pack_rgb888_planar_to_interleaved(
         input_tensor.data(), temp, input_info->width, input_info->height,
         norm_val_, norm_shift_, div_val_, div_shift_);
@@ -839,14 +849,14 @@ void LibcameraAdapter::GetFrames(std::vector<senscord::FrameInfo> *frames, bool 
       free(temp);
     } else {
       it_image_property_->pixel_format = "image_rgb24";
-      enc_buffer = temp;
-      enc_len = input_tensor.size();
+      enc_buffer                       = temp;
+      enc_len                          = input_tensor.size();
     }
 
     rawdata2.captured_timestamp = timestamp;
-    rawdata2.data_type = senscord::kRawDataTypeImage;
-    rawdata2.data_offset = 0;
-    rawdata2.data_size = enc_len;
+    rawdata2.data_type          = senscord::kRawDataTypeImage;
+    rawdata2.data_offset        = 0;
+    rawdata2.data_size          = enc_len;
     status = allocator->Allocate(rawdata2.data_size, &rawdata2.data_memory);
     if (!status.ok()) {
       SENSCORD_LOG_ERROR_TAGGED("libcamera",
@@ -858,21 +868,21 @@ void LibcameraAdapter::GetFrames(std::vector<senscord::FrameInfo> *frames, bool 
       free(enc_buffer);
     }
     frame.channels.push_back(rawdata2);
-    it_image_property_->width = input_info->width;
-    it_image_property_->height = input_info->height;
+    it_image_property_->width        = input_info->width;
+    it_image_property_->height       = input_info->height;
     it_image_property_->stride_bytes = input_info->width * 3;
     util_->UpdateChannelProperty(
         AITRIOS_SENSOR_CHANNEL_ID_INFERENCE_INPUT_IMAGE,
         senscord::kImagePropertyKey, it_image_property_);
   }
 
-  libcamera::Stream *stream = libcam_->ViewfinderStream();
-  StreamInfo info = libcam_->GetStreamInfo(stream);
+  libcamera::Stream *stream      = libcam_->ViewfinderStream();
+  StreamInfo info                = libcam_->GetStreamInfo(stream);
   libcamera::FrameBuffer *buffer = payload->buffers[stream];
   BufferReadSync r(libcam_, buffer);
   libcamera::Span span = r.Get()[0];
   // ViewFinder
-  const int fd = buffer->planes()[0].fd.get();
+  const int fd  = buffer->planes()[0].fd.get();
   void *src_ptr = ::mmap(nullptr, span.size(), PROT_READ, MAP_SHARED, fd, 0);
   if (src_ptr == MAP_FAILED) {
     struct stat s;
@@ -902,16 +912,16 @@ void LibcameraAdapter::GetFrames(std::vector<senscord::FrameInfo> *frames, bool 
       return;
     }
   } else {
-    enc_len = (jpeg_mem_len_t)span.size();
+    enc_len    = (jpeg_mem_len_t)span.size();
     enc_buffer = (uint8_t *)src_ptr;
   }
   // ViewFinder Channel
   senscord::ChannelRawData rawdata0 = {};
-  rawdata0.channel_id = AITRIOS_SENSOR_CHANNEL_ID_INFERENCE_RAW_IMAGE;
+  rawdata0.channel_id         = AITRIOS_SENSOR_CHANNEL_ID_INFERENCE_RAW_IMAGE;
   rawdata0.captured_timestamp = timestamp;
-  rawdata0.data_type = senscord::kRawDataTypeImage;
-  rawdata0.data_offset = 0;
-  rawdata0.data_size = enc_len;
+  rawdata0.data_type          = senscord::kRawDataTypeImage;
+  rawdata0.data_offset        = 0;
+  rawdata0.data_size          = enc_len;
 
   status = allocator->Allocate(rawdata0.data_size, &rawdata0.data_memory);
   if (!status.ok()) {
@@ -927,10 +937,10 @@ void LibcameraAdapter::GetFrames(std::vector<senscord::FrameInfo> *frames, bool 
   }
 
   frame.channels.push_back(rawdata0);
-  full_image_property_->width = info.width;
-  full_image_property_->height = info.height;
+  full_image_property_->width        = info.width;
+  full_image_property_->height       = info.height;
   full_image_property_->stride_bytes = info.stride;
-  camera_image_stride_bytes_ = info.stride;
+  camera_image_stride_bytes_         = info.stride;
   util_->UpdateChannelProperty(AITRIOS_SENSOR_CHANNEL_ID_INFERENCE_RAW_IMAGE,
                                senscord::kImagePropertyKey,
                                full_image_property_);
@@ -964,12 +974,12 @@ void LibcameraAdapter::UpdateTensorShapesProperty(CompletedRequestPtr payload) {
     return;
   }
 
-  tensor_shapes_property_ = {};
+  tensor_shapes_property_     = {};
   uint32_t shapes_array_index = 0;
 
   for (uint32_t i = 0; i < output_info_ptr.numTensors; ++i) {
     const OutputTensorInfo &tensor_info = output_info_ptr.info[i];
-    uint32_t num_dimensions = tensor_info.numDimensions;
+    uint32_t num_dimensions             = tensor_info.numDimensions;
 
     SENSCORD_LOG_DEBUG_TAGGED(
         "libcamera", "OutputTensorInfo[%d]: tensorDataNum=%d, numDimensions=%d",
@@ -1028,15 +1038,18 @@ senscord::Status LibcameraAdapter::SetProperty(
     case SENSOR_ROTATION_ANGLE_270_DEG:
       break;
     default:
-      return SENSCORD_STATUS_FAIL("libcamera", senscord::Status::kCauseInvalidArgument,
-                                  "Invalid rotation value : %d", property->rotation_angle);
+      return SENSCORD_STATUS_FAIL(
+          "libcamera", senscord::Status::kCauseInvalidArgument,
+          "Invalid rotation value : %d", property->rotation_angle);
   }
   if (is_running_) {
     if (!no_image_crop_) {
-      if (!IsValidCropRange(image_crop_.x, image_crop_.y, image_crop_.w, image_crop_.h)) {
-        return SENSCORD_STATUS_FAIL("libcamera", senscord::Status::kCauseOutOfRange,
-                                    "Invalid crop range : x=%d, y=%d, w=%d, h=%d",
-                                    image_crop_.x, image_crop_.y, image_crop_.w, image_crop_.h);
+      if (!IsValidCropRange(image_crop_.x, image_crop_.y, image_crop_.w,
+                            image_crop_.h)) {
+        return SENSCORD_STATUS_FAIL(
+            "libcamera", senscord::Status::kCauseOutOfRange,
+            "Invalid crop range : x=%d, y=%d, w=%d, h=%d", image_crop_.x,
+            image_crop_.y, image_crop_.w, image_crop_.h);
       }
     }
   }
@@ -1054,12 +1067,11 @@ senscord::Status LibcameraAdapter::SetProperty(
       HandleCustomJsonPathString(options_->post_process_file, bundle_id);
   if (post_process_file.length()) {
     options_->post_process_file = post_process_file;
-    ai_model_bundle_id_ = bundle_id;
+    ai_model_bundle_id_         = bundle_id;
   } else {
     return SENSCORD_STATUS_FAIL(
         "libcamera", senscord::Status::kCauseInvalidOperation,
-        "The set ai_model_bundle_id(%s) is invalid.",
-        bundle_id.c_str());
+        "The set ai_model_bundle_id(%s) is invalid.", bundle_id.c_str());
   }
 
   return senscord::Status::OK();
@@ -1073,18 +1085,20 @@ senscord::Status LibcameraAdapter::GetProperty(
 
   status = reg_handle_.ReadRegister(kRegTemperatureEnable, &reg_value);
   if (!status.ok()) {
-    return SENSCORD_STATUS_FAIL("libcamera", senscord::Status::kCauseHardwareError,
+    return SENSCORD_STATUS_FAIL("libcamera",
+                                senscord::Status::kCauseHardwareError,
                                 "Failed to read temperature enable register");
   }
   if ((reg_value & kRegTemperatureEnableMask) == 0) {
-    return SENSCORD_STATUS_FAIL(
-        "libcamera", senscord::Status::kCauseInvalidOperation,
-        "Temperature measurement is disabled");
+    return SENSCORD_STATUS_FAIL("libcamera",
+                                senscord::Status::kCauseInvalidOperation,
+                                "Temperature measurement is disabled");
   }
 
   status = reg_handle_.ReadRegister(kRegTemperatureValue, &reg_value);
   if (!status.ok()) {
-    return SENSCORD_STATUS_FAIL("libcamera", senscord::Status::kCauseHardwareError,
+    return SENSCORD_STATUS_FAIL("libcamera",
+                                senscord::Status::kCauseHardwareError,
                                 "Failed to read temperature value register");
   }
   temp_value = static_cast<int8_t>(reg_value);
@@ -1096,9 +1110,11 @@ senscord::Status LibcameraAdapter::GetProperty(
     temp_value = kRegTemperatureMax;
   }
   // Only use Sensor-ID : 0 (IMX500 sensor celsius)
-  property->temperatures[kImx500SensorId] = {static_cast<float>(temp_value), "IMX500 sensor celsius"};
+  property->temperatures[kImx500SensorId] = {static_cast<float>(temp_value),
+                                             "IMX500 sensor celsius"};
 
-  SENSCORD_LOG_INFO("Temperature: [%d/%f]", temp_value, property->temperatures[kImx500SensorId].temperature);
+  SENSCORD_LOG_INFO("Temperature: [%d/%f]", temp_value,
+                    property->temperatures[kImx500SensorId].temperature);
 
   return senscord::Status::OK();
 }
@@ -1142,9 +1158,10 @@ senscord::Status LibcameraAdapter::GetProperty(
   const libcamera::ControlId *target_id = nullptr;
   {
     auto properties = libcamera::properties::properties;
-    auto itr = std::find_if(
-        properties.begin(), properties.end(),
-        [property](auto p) { return property->id == p.second->name(); });
+    auto itr =
+        std::find_if(properties.begin(), properties.end(), [property](auto p) {
+          return property->id == p.second->name();
+        });
     if (itr == properties.end()) {
       return SENSCORD_STATUS_FAIL("libcamera",
                                   senscord::Status::kCauseInvalidArgument,
@@ -1166,7 +1183,7 @@ senscord::Status LibcameraAdapter::GetDevices(
   for (auto camera : camera_manager_->cameras()) {
     senscord::libcamera_image::DeviceEnumerationProperty::LibcameraDevice
         device = {};
-    device.id = camera->id();
+    device.id  = camera->id();
     device.name =
         camera->properties().get(libcamera::properties::Model).value();
     property->devices.push_back(device);
@@ -1174,21 +1191,22 @@ senscord::Status LibcameraAdapter::GetDevices(
   return senscord::Status::OK();
 }
 
-senscord::Status LibcameraAdapter::GetAIModelVersion(std::string &ai_model_version) {
+senscord::Status LibcameraAdapter::GetAIModelVersion(
+    std::string &ai_model_version) {
   std::string j_str = ReadPostProcessJsonString(options_->post_process_file);
   if (j_str.empty()) {
     return SENSCORD_STATUS_FAIL("libcamera",
-                              senscord::Status::kCauseNotSupported,
-                              "The json parameter for PostProcess is empty.");
+                                senscord::Status::kCauseNotSupported,
+                                "The json parameter for PostProcess is empty.");
   }
 
   if (CheckBundleIdItOnly(ai_model_bundle_id_)) {
-    ai_model_version =
-        MODEL_ID_CONVERTER_VERSION_IT_ONLY + ai_model_bundle_id_ + MODEL_ID_VERSION_NUMBER_IT_ONLY;
+    ai_model_version = MODEL_ID_CONVERTER_VERSION_IT_ONLY +
+                       ai_model_bundle_id_ + MODEL_ID_VERSION_NUMBER_IT_ONLY;
   } else {
     std::string file_name;
     std::string rpk_path = GetRpkPath(j_str);
-    size_t pos = rpk_path.find_last_of("/\\");
+    size_t pos           = rpk_path.find_last_of("/\\");
 
     if (pos != std::string::npos) {
       file_name = rpk_path.substr(pos + 1);
@@ -1196,8 +1214,8 @@ senscord::Status LibcameraAdapter::GetAIModelVersion(std::string &ai_model_versi
       file_name = rpk_path;
     }
 
-    size_t first = file_name.find("_");
-    size_t second = file_name.find("_", first + 1);
+    size_t first     = file_name.find("_");
+    size_t second    = file_name.find("_", first + 1);
     ai_model_version = file_name.substr(first + 1, second - first - 1);
   }
 
@@ -1210,16 +1228,16 @@ senscord::Status LibcameraAdapter::SetExposureMode(ExposureModeParam mode) {
   switch (mode) {
     case kExposureModeParamAuto:
       options_->exposure_index = 0;
-      manual_exposure_.keep = false;
+      manual_exposure_.keep    = false;
       break;
     case kExposureModeParamGainFix:
       return SENSCORD_STATUS_FAIL("libcamera",
-                              senscord::Status::kCauseNotSupported,
-                              "ExposureModeGainFix is not supported.");
+                                  senscord::Status::kCauseNotSupported,
+                                  "ExposureModeGainFix is not supported.");
     case kExposureModeParamTimeFix:
       return SENSCORD_STATUS_FAIL("libcamera",
-                              senscord::Status::kCauseNotSupported,
-                              "ExposureModeTimeFix is not supported.");
+                                  senscord::Status::kCauseNotSupported,
+                                  "ExposureModeTimeFix is not supported.");
     case kExposureModeParamManual:
       options_->exposure_index = 4;
       break;
@@ -1229,23 +1247,22 @@ senscord::Status LibcameraAdapter::SetExposureMode(ExposureModeParam mode) {
         options_->exposure_index = 4;
 
         /* Set the previous value. */
-        status = SetManualExposureParam(
-              manual_exposure_.exposure_time,
-              manual_exposure_.gain);
+        status = SetManualExposureParam(manual_exposure_.exposure_time,
+                                        manual_exposure_.gain);
         if (!status.ok()) {
           return status;
         }
       } else {
-        return SENSCORD_STATUS_FAIL("libcamera",
-                              senscord::Status::kCauseInvalidOperation,
-                              "ManualExposure was not executed previously.");
+        return SENSCORD_STATUS_FAIL(
+            "libcamera", senscord::Status::kCauseInvalidOperation,
+            "ManualExposure was not executed previously.");
       }
 
       break;
     default:
       return SENSCORD_STATUS_FAIL("libcamera",
-                              senscord::Status::kCauseNotSupported,
-                              "mode(%d) is not supported.", mode);
+                                  senscord::Status::kCauseNotSupported,
+                                  "mode(%d) is not supported.", mode);
   }
 
   exposure_mode_ = mode;
@@ -1254,18 +1271,14 @@ senscord::Status LibcameraAdapter::SetExposureMode(ExposureModeParam mode) {
 }
 
 senscord::Status LibcameraAdapter::SetAutoExposureParam(
-    uint32_t &max_exposure_time,
-    uint32_t &min_exposure_time,
-    float &max_gain,
+    uint32_t &max_exposure_time, uint32_t &min_exposure_time, float &max_gain,
     uint32_t &convergence_speed) {
   /* There is no interface for configuring it in libcamera. */
-  return SENSCORD_STATUS_FAIL("libcamera",
-                          senscord::Status::kCauseNotSupported,
-                          "The AutoExposure parameter is not supported.");
+  return SENSCORD_STATUS_FAIL("libcamera", senscord::Status::kCauseNotSupported,
+                              "The AutoExposure parameter is not supported.");
 }
 
-senscord::Status LibcameraAdapter::SetAeEvCompensation(
-    float &ev_compensation) {
+senscord::Status LibcameraAdapter::SetAeEvCompensation(float &ev_compensation) {
   options_->ev = ev_compensation;
   return senscord::Status::OK();
 }
@@ -1278,8 +1291,8 @@ senscord::Status LibcameraAdapter::SetAeAntiFlickerMode(
       break;
     case kAeAntiFlickerModeAuto:
       return SENSCORD_STATUS_FAIL("libcamera",
-                              senscord::Status::kCauseNotSupported,
-                              "mode(%d) is not supported.", mode);
+                                  senscord::Status::kCauseNotSupported,
+                                  "mode(%d) is not supported.", mode);
 
     case kAeAntiFlickerModeForce50Hz:
       options_->flicker_period.set(AE_FLICKER_PERIOD_50HZ);
@@ -1289,74 +1302,65 @@ senscord::Status LibcameraAdapter::SetAeAntiFlickerMode(
       break;
     default:
       return SENSCORD_STATUS_FAIL("libcamera",
-                              senscord::Status::kCauseNotSupported,
-                              "mode(%d) is not supported.", mode);
+                                  senscord::Status::kCauseNotSupported,
+                                  "mode(%d) is not supported.", mode);
   }
 
   return senscord::Status::OK();
 }
 
-senscord::Status LibcameraAdapter::SetAeMetering(
-    AeMeteringMode mode,
-    AeMeteringWindow &window) {
+senscord::Status LibcameraAdapter::SetAeMetering(AeMeteringMode mode,
+                                                 AeMeteringWindow &window) {
   /* There is no interface for configuring it in libcamera. */
-    return SENSCORD_STATUS_FAIL("libcamera",
-                          senscord::Status::kCauseNotSupported,
-                          "The AeMetering parameter is not supported.");
+  return SENSCORD_STATUS_FAIL("libcamera", senscord::Status::kCauseNotSupported,
+                              "The AeMetering parameter is not supported.");
 }
 
 senscord::Status LibcameraAdapter::SetManualExposureParam(
-    uint32_t exposure_time,
-    float gain) {
+    uint32_t exposure_time, float gain) {
   if (options_->exposure_index == 4) {
     std::string shutter_str = std::to_string(exposure_time) + "us";
     options_->shutter.set(shutter_str);
     options_->gain = gain;
 
-    manual_exposure_.keep = true;
+    manual_exposure_.keep          = true;
     manual_exposure_.exposure_time = exposure_time;
-    manual_exposure_.gain = gain;
+    manual_exposure_.gain          = gain;
   }
 
   return senscord::Status::OK();
 }
 
-senscord::Status LibcameraAdapter::SetImageSize(
-    uint32_t width,
-    uint32_t height) {
-  camera_image_size_width_ = width;
+senscord::Status LibcameraAdapter::SetImageSize(uint32_t width,
+                                                uint32_t height) {
+  camera_image_size_width_  = width;
   camera_image_size_height_ = height;
   return senscord::Status::OK();
 }
 
-senscord::Status LibcameraAdapter::SetFrameRate(
-    uint32_t num,
-    uint32_t denom) {
+senscord::Status LibcameraAdapter::SetFrameRate(uint32_t num, uint32_t denom) {
   if (denom != 0) {
-    float rate = (float)num / (float)denom;
+    float rate         = (float)num / (float)denom;
     camera_frame_rate_ = rate;
   } else {
     return SENSCORD_STATUS_FAIL("libcamera",
-                              senscord::Status::kCauseInvalidArgument,
-                              "denominator is zero.");
+                                senscord::Status::kCauseInvalidArgument,
+                                "denominator is zero.");
   }
 
   return senscord::Status::OK();
 }
 
-senscord::Status LibcameraAdapter::SetImageFlip(
-    bool flip_horizontal,
-    bool flip_vertical) {
+senscord::Status LibcameraAdapter::SetImageFlip(bool flip_horizontal,
+                                                bool flip_vertical) {
   image_flip_.h = flip_horizontal;
   image_flip_.v = flip_vertical;
   return senscord::Status::OK();
 }
 
-senscord::Status LibcameraAdapter::SetImageCrop(
-    uint32_t left,
-    uint32_t top,
-    uint32_t width,
-    uint32_t height) {
+senscord::Status LibcameraAdapter::SetImageCrop(uint32_t left, uint32_t top,
+                                                uint32_t width,
+                                                uint32_t height) {
   bool no_crop = IsNoCrop(left, top, width, height);
   if (is_running_) {
     if (!no_crop) {
@@ -1368,53 +1372,65 @@ senscord::Status LibcameraAdapter::SetImageCrop(
     }
   }
 
-  image_crop_.x = left;
-  image_crop_.y = top;
-  image_crop_.w = width;
-  image_crop_.h = height;
+  image_crop_.x  = left;
+  image_crop_.y  = top;
+  image_crop_.w  = width;
+  image_crop_.h  = height;
   no_image_crop_ = no_crop;
 
   if (!UpdateImageCrop()) {
-    return SENSCORD_STATUS_FAIL("libcamera",
-                                senscord::Status::kCauseAborted,
+    return SENSCORD_STATUS_FAIL("libcamera", senscord::Status::kCauseAborted,
                                 "Failed to update crop parameters.");
   }
 
   return senscord::Status::OK();
 }
 
-senscord::Status LibcameraAdapter::SetCameraImage(
-    uint32_t width,
-    uint32_t height,
-    char *pixel_format) {
-  camera_image_width_ = width;
-  camera_image_height_ = height;
+senscord::Status LibcameraAdapter::SetIspImage(uint32_t width, uint32_t height,
+                                               char *pixel_format) {
+  isp_image_width_  = width;
+  isp_image_height_ = height;
 
-  if ((pixel_format == nullptr) || (strnlen(pixel_format, kPixelFormatLength) == 0)) {
-    camera_image_pixel_format_ = options_->viewfinder_mode_string;
+  if ((pixel_format == nullptr) ||
+      (strnlen(pixel_format, kPixelFormatLength) == 0)) {
+    isp_image_pixel_format_ = options_->viewfinder_mode_string;
   } else {
-    camera_image_pixel_format_ = std::string(pixel_format);
+    isp_image_pixel_format_ = std::string(pixel_format);
   }
 
   return senscord::Status::OK();
 }
 
-senscord::Status LibcameraAdapter::GetCameraImage(
-    uint32_t &width,
-    uint32_t &height,
-    uint32_t &stride_bytes,
-    char *pixel_format) {
-  width = camera_image_width_;
-  height = camera_image_height_;
+senscord::Status LibcameraAdapter::GetIspImage(uint32_t &width,
+                                               uint32_t &height,
+                                               uint32_t &stride_bytes,
+                                               char *pixel_format) {
+  width        = isp_image_width_;
+  height       = isp_image_height_;
   stride_bytes = camera_image_stride_bytes_;
 
   if (pixel_format == nullptr) {
-    return SENSCORD_STATUS_FAIL("libcamera", senscord::Status::kCauseInvalidArgument,
-                              "pixel_format is null");
+    return SENSCORD_STATUS_FAIL("libcamera",
+                                senscord::Status::kCauseInvalidArgument,
+                                "pixel_format is null");
   }
 
-  strncpy(pixel_format, camera_image_pixel_format_.c_str(), kPixelFormatLength - 1);
+  strncpy(pixel_format, isp_image_pixel_format_.c_str(),
+          kPixelFormatLength - 1);
   pixel_format[kPixelFormatLength - 1] = '\0';
+
+  return senscord::Status::OK();
+}
+
+senscord::Status LibcameraAdapter::SetIspFrameRate(uint32_t num,
+                                                   uint32_t denom) {
+  if (denom != 0) {
+    isp_frame_rate_ = (float)num / (float)denom;
+  } else {
+    return SENSCORD_STATUS_FAIL("libcamera",
+                                senscord::Status::kCauseInvalidArgument,
+                                "denominator is zero.");
+  }
 
   return senscord::Status::OK();
 }
@@ -1595,7 +1611,7 @@ senscord::Status LibcameraAdapter::FindLibcameraControlId(
 
   for (auto ctrl_pair : camera_->controls()) {
     if (ctrl_pair.first->name() == control_name) {
-      *control_id = ctrl_pair.first;
+      *control_id   = ctrl_pair.first;
       *control_info = ctrl_pair.second;
       return senscord::Status::OK();
     }
@@ -1873,11 +1889,12 @@ senscord::Status LibcameraAdapter::ConvertValue(
   return senscord::Status::OK();
 }
 
-bool LibcameraAdapter::CheckBundleIdItOnly(const std::string ai_model_bundle_id) {
+bool LibcameraAdapter::CheckBundleIdItOnly(
+    const std::string ai_model_bundle_id) {
   if ((ai_model_bundle_id == std::string(AiBundleIdItonly)) ||
       (ai_model_bundle_id == std::string(AiBundleIdVgaRgbItonly))) {
-    SENSCORD_LOG_INFO(
-      "ai_model_bundle_id(%s) is InputTensorOnly pattern.", ai_model_bundle_id.c_str());
+    SENSCORD_LOG_INFO("ai_model_bundle_id(%s) is InputTensorOnly pattern.",
+                      ai_model_bundle_id.c_str());
     return true;
   }
 
@@ -1885,8 +1902,7 @@ bool LibcameraAdapter::CheckBundleIdItOnly(const std::string ai_model_bundle_id)
 }
 
 std::string LibcameraAdapter::ReplaceCustomJsonPathString(
-    const std::string &path,
-    const std::string &replacement) {
+    const std::string &path, const std::string &replacement) {
   std::string result_path = path;
   std::string dir_path;
   size_t pos = result_path.find_last_of("/\\");
@@ -1898,7 +1914,7 @@ std::string LibcameraAdapter::ReplaceCustomJsonPathString(
     dir_path = ".";
   }
 
-  result_path =  dir_path + "/" + replacement;
+  result_path = dir_path + "/" + replacement;
 
   std::ifstream ifs(result_path);
   if (!ifs) {
@@ -1909,15 +1925,18 @@ std::string LibcameraAdapter::ReplaceCustomJsonPathString(
 }
 
 std::string LibcameraAdapter::HandleCustomJsonPathString(
-    const std::string &post_process_file, const std::string &ai_model_bundle_id) {
+    const std::string &post_process_file,
+    const std::string &ai_model_bundle_id) {
   std::string post_process_file_new = post_process_file;
 
   if (CheckBundleIdItOnly(ai_model_bundle_id)) {
     std::string replacement = CustomVgaItonlyParamJsonFile;
-    post_process_file_new = ReplaceCustomJsonPathString(post_process_file, replacement);
+    post_process_file_new =
+        ReplaceCustomJsonPathString(post_process_file, replacement);
   } else {
     std::string custom_json_file = "custom_" + ai_model_bundle_id + ".json";
-    post_process_file_new = ReplaceCustomJsonPathString(post_process_file, custom_json_file);
+    post_process_file_new =
+        ReplaceCustomJsonPathString(post_process_file, custom_json_file);
     if (!CheckRpkExist(post_process_file_new)) {
       return "";
     }
@@ -1928,10 +1947,12 @@ std::string LibcameraAdapter::HandleCustomJsonPathString(
   return post_process_file_new;
 }
 
-std::string LibcameraAdapter::ReadPostProcessJsonString(const std::string &post_process_file) {
+std::string LibcameraAdapter::ReadPostProcessJsonString(
+    const std::string &post_process_file) {
   FILE *file = fopen(post_process_file.c_str(), "rb");
   if (!file) {
-    SENSCORD_LOG_ERROR_TAGGED("libcamera", "Failed to open %s.", post_process_file.c_str());
+    SENSCORD_LOG_ERROR_TAGGED("libcamera", "Failed to open %s.",
+                              post_process_file.c_str());
 
     /* Return empty strings. */
     return "";
@@ -1957,19 +1978,18 @@ std::string LibcameraAdapter::GetRpkPath(const std::string &json_str) {
     return "";
   }
 
-  if (!(j.contains("imx500_no_process")) || !(j["imx500_no_process"].is_object())) {
+  if (!(j.contains("imx500_no_process")) ||
+      !(j["imx500_no_process"].is_object())) {
     SENSCORD_LOG_WARNING_TAGGED(
-        "libcamera",
-        "The key \"imx500_no_process\" does not exist.");
+        "libcamera", "The key \"imx500_no_process\" does not exist.");
     return "";
   }
 
   nlohmann::json imx500_no_process_j = j["imx500_no_process"];
   if (!(imx500_no_process_j.contains("network_file")) ||
       !(imx500_no_process_j["network_file"].is_string())) {
-    SENSCORD_LOG_WARNING_TAGGED(
-        "libcamera",
-        "The key \"network_file\" does not exist.");
+    SENSCORD_LOG_WARNING_TAGGED("libcamera",
+                                "The key \"network_file\" does not exist.");
     return "";
   }
 
@@ -1979,17 +1999,16 @@ std::string LibcameraAdapter::GetRpkPath(const std::string &json_str) {
 bool LibcameraAdapter::CheckRpkExist(const std::string &post_process_file) {
   std::string j_str = ReadPostProcessJsonString(post_process_file);
   if (j_str.empty()) {
-    SENSCORD_LOG_WARNING_TAGGED("libcamera", "The json parameter for PostProcess is empty.");
+    SENSCORD_LOG_WARNING_TAGGED("libcamera",
+                                "The json parameter for PostProcess is empty.");
     return false;
   }
 
   std::string rpk_path = GetRpkPath(j_str);
-  FILE *f = fopen(rpk_path.c_str(), "rb");
+  FILE *f              = fopen(rpk_path.c_str(), "rb");
   if (!f) {
-    SENSCORD_LOG_WARNING_TAGGED(
-        "libcamera",
-        "Failed to open %s, %s.",
-        rpk_path.c_str(), strerror(errno));
+    SENSCORD_LOG_WARNING_TAGGED("libcamera", "Failed to open %s, %s.",
+                                rpk_path.c_str(), strerror(errno));
     return false;
   }
 
@@ -1998,9 +2017,8 @@ bool LibcameraAdapter::CheckRpkExist(const std::string &post_process_file) {
   return true;
 }
 
-bool LibcameraAdapter::ReadInputTensorSizeFromRpkFile(
-    const uint8_t *data,
-    size_t size) {
+bool LibcameraAdapter::ReadInputTensorSizeFromRpkFile(const uint8_t *data,
+                                                      size_t size) {
   typedef struct {
     const char *key;
     uint32_t *value_out;
@@ -2008,21 +2026,19 @@ bool LibcameraAdapter::ReadInputTensorSizeFromRpkFile(
   } ParamKey;
 
   uint32_t width = 0, height = 0;
-  ParamKey params[] = {
-    {"inputTensorWidth", &width, 0},
-    {"inputTensorHeight", &height, 0}
-  };
-  int num_params = sizeof(params) / sizeof(params[0]);
+  ParamKey params[] = {{"inputTensorWidth", &width, 0},
+                       {"inputTensorHeight", &height, 0}};
+  int num_params    = sizeof(params) / sizeof(params[0]);
 
-  /* Search from the end since network_info is appended at the end of the RPK file. */
+  /* Search from the end since network_info is appended at the end of the RPK
+   * file. */
   for (size_t i = size; i > 0; i--) {
     size_t index = i - 1;
     for (int p = 0; p < num_params; p++) {
       size_t key_len = strnlen(params[p].key, index + 1);
 
-      if (!params[p].found &&
-        (index >= key_len) &&
-        (memcmp(data + index - key_len + 1, params[p].key, key_len) == 0)) {
+      if (!params[p].found && (index >= key_len) &&
+          (memcmp(data + index - key_len + 1, params[p].key, key_len) == 0)) {
         size_t pos = index + 1;
 
         while ((pos < size) && ((data[pos] == ' ') || (data[pos] == '\t'))) {
@@ -2039,7 +2055,7 @@ bool LibcameraAdapter::ReadInputTensorSizeFromRpkFile(
           }
 
           *(params[p].value_out) = value;
-          params[p].found = 1;
+          params[p].found        = 1;
         }
       }
     }
@@ -2055,26 +2071,26 @@ bool LibcameraAdapter::ReadInputTensorSizeFromRpkFile(
     }
   }
 
-  it_image_property_->width = width;
+  it_image_property_->width  = width;
   it_image_property_->height = height;
 
   return true;
 }
 
-bool LibcameraAdapter::ReadInputTensorSize(const std::string &post_process_file) {
+bool LibcameraAdapter::ReadInputTensorSize(
+    const std::string &post_process_file) {
   std::string j_str = ReadPostProcessJsonString(post_process_file);
   if (j_str.empty()) {
-    SENSCORD_LOG_WARNING_TAGGED("libcamera", "The json parameter for PostProcess is empty.");
+    SENSCORD_LOG_WARNING_TAGGED("libcamera",
+                                "The json parameter for PostProcess is empty.");
     return false;
   }
 
   std::string rpk_path = GetRpkPath(j_str);
-  FILE *f = fopen(rpk_path.c_str(), "rb");
+  FILE *f              = fopen(rpk_path.c_str(), "rb");
   if (!f) {
-    SENSCORD_LOG_WARNING_TAGGED(
-        "libcamera",
-        "Failed to open %s, %s.",
-        rpk_path.c_str(), strerror(errno));
+    SENSCORD_LOG_WARNING_TAGGED("libcamera", "Failed to open %s, %s.",
+                                rpk_path.c_str(), strerror(errno));
     return false;
   }
 
@@ -2088,13 +2104,14 @@ bool LibcameraAdapter::ReadInputTensorSize(const std::string &post_process_file)
   fclose(f);
 
   if (bytes_read != fsize) {
-    SENSCORD_LOG_ERROR_TAGGED("libcamera",
-                              "Failed to read complete file: expected %zu bytes, read %zu bytes",
-                              fsize, bytes_read);
+    SENSCORD_LOG_ERROR_TAGGED(
+        "libcamera",
+        "Failed to read complete file: expected %zu bytes, read %zu bytes",
+        fsize, bytes_read);
     return false;
   }
 
-  if(!ReadInputTensorSizeFromRpkFile(data.data(), fsize)) {
+  if (!ReadInputTensorSizeFromRpkFile(data.data(), fsize)) {
     return false;
   }
 
@@ -2109,15 +2126,12 @@ bool LibcameraAdapter::GetDeviceID(std::string &device_id_str) {
   }
 
   const uint32_t device_id_ctrl_id = DEVICE_ID_CTRL_ID;
-  const int32_t device_id_num = 4;
+  const int32_t device_id_num      = 4;
 
   uint32_t device_id[device_id_num] = {0};
 
-  if (!v4l2_manager.GetExtControl(
-                  device_id_ctrl_id,
-                  (void*)device_id,
-                  sizeof(device_id),
-                  sizeof(uint32_t) * 8)) {
+  if (!v4l2_manager.GetExtControl(device_id_ctrl_id, (void *)device_id,
+                                  sizeof(device_id), sizeof(uint32_t) * 8)) {
     v4l2_manager.Close();
     SENSCORD_LOG_WARNING("Failed to execute ioctl");
     return false;
@@ -2130,7 +2144,8 @@ bool LibcameraAdapter::GetDeviceID(std::string &device_id_str) {
   /* convert string */
   for (int i = 0; i < device_id_num; i++) {
     std::ostringstream ss;
-    ss << std::setw(8) << std::setfill('0') << std::uppercase << std::hex << device_id[i];
+    ss << std::setw(8) << std::setfill('0') << std::uppercase << std::hex
+       << device_id[i];
     std::string result = ss.str();
 
     device_id_str_tmp += result;
@@ -2142,48 +2157,58 @@ bool LibcameraAdapter::GetDeviceID(std::string &device_id_str) {
 }
 
 uint32_t LibcameraAdapter::ConvertCropHorizontalToSensor(uint32_t target) {
-  return (uint32_t)((target * IMX500_FULL_RESOLUTION_WIDTH) / camera_image_size_width_);
+  return (uint32_t)((target * IMX500_FULL_RESOLUTION_WIDTH) /
+                    camera_image_size_width_);
 }
 
 uint32_t LibcameraAdapter::ConvertCropVerticalToSensor(uint32_t target) {
-  return (uint32_t)((target * IMX500_FULL_RESOLUTION_HEIGHT) / camera_image_size_height_);
+  return (uint32_t)((target * IMX500_FULL_RESOLUTION_HEIGHT) /
+                    camera_image_size_height_);
 }
 
-bool LibcameraAdapter::IsNoCrop(
-    uint32_t crop_left, uint32_t crop_top, uint32_t crop_width, uint32_t crop_height) {
-  return (crop_left == 0) &&
-         (crop_top == 0) &&
+bool LibcameraAdapter::IsNoCrop(uint32_t crop_left, uint32_t crop_top,
+                                uint32_t crop_width, uint32_t crop_height) {
+  return (crop_left == 0) && (crop_top == 0) &&
          (crop_width == camera_image_size_width_) &&
          (crop_height == camera_image_size_height_);
 }
 
-
-bool LibcameraAdapter::IsValidCropRange(
-    uint32_t crop_left, uint32_t crop_top, uint32_t crop_width, uint32_t crop_height) {
-  bool swap = (rotation_property_.rotation_angle == SENSOR_ROTATION_ANGLE_90_DEG) ||
-              (rotation_property_.rotation_angle == SENSOR_ROTATION_ANGLE_270_DEG);
-  uint32_t inference_image_width = swap ?
-    it_image_property_->height : it_image_property_->width;
-  uint32_t inference_image_height = swap ?
-    it_image_property_->width : it_image_property_->height;
+bool LibcameraAdapter::IsValidCropRange(uint32_t crop_left, uint32_t crop_top,
+                                        uint32_t crop_width,
+                                        uint32_t crop_height) {
+  bool swap =
+      (rotation_property_.rotation_angle == SENSOR_ROTATION_ANGLE_90_DEG) ||
+      (rotation_property_.rotation_angle == SENSOR_ROTATION_ANGLE_270_DEG);
+  uint32_t inference_image_width =
+      swap ? it_image_property_->height : it_image_property_->width;
+  uint32_t inference_image_height =
+      swap ? it_image_property_->width : it_image_property_->height;
   uint32_t result = 0;
   result |= ((int)crop_left < 0) << 0;
-  result |= ((int)crop_left > (int)(camera_image_size_width_ - crop_width)) << 1;
+  result |= ((int)crop_left > (int)(camera_image_size_width_ - crop_width))
+            << 1;
   result |= ((int)crop_width < (int)inference_image_width) << 2;
-  result |= ((int)crop_width > (int)(camera_image_size_width_ - crop_left)) << 3;
+  result |= ((int)crop_width > (int)(camera_image_size_width_ - crop_left))
+            << 3;
   result |= ((int)crop_top < 0) << 4;
-  result |= ((int)crop_top > (int)(camera_image_size_height_ - crop_height)) << 5;
+  result |= ((int)crop_top > (int)(camera_image_size_height_ - crop_height))
+            << 5;
   result |= ((int)crop_height < (int)inference_image_height) << 6;
-  result |= ((int)crop_height > (int)(camera_image_size_height_ - crop_top)) << 7;
+  result |= ((int)crop_height > (int)(camera_image_size_height_ - crop_top))
+            << 7;
   if (result != 0) {
     SENSCORD_LOG_ERROR_TAGGED("libcamera", "Crop range error: 0x%x", result);
-    SENSCORD_LOG_ERROR_TAGGED("libcamera", "  [crop] left: %d, top: %d, width: %d, height: %d",
-         crop_left, crop_top, crop_width, crop_height);
-    SENSCORD_LOG_ERROR_TAGGED("libcamera", "  [camera image] width: %d, height: %d",
-         camera_image_size_width_, camera_image_size_height_);
-    SENSCORD_LOG_ERROR_TAGGED("libcamera", "  [inference image] width: %d, height: %d",
-         it_image_property_->width, it_image_property_->height);
-    SENSCORD_LOG_ERROR_TAGGED("libcamera", "  [rotation] %d", rotation_property_.rotation_angle);
+    SENSCORD_LOG_ERROR_TAGGED(
+        "libcamera", "  [crop] left: %d, top: %d, width: %d, height: %d",
+        crop_left, crop_top, crop_width, crop_height);
+    SENSCORD_LOG_ERROR_TAGGED(
+        "libcamera", "  [camera image] width: %d, height: %d",
+        camera_image_size_width_, camera_image_size_height_);
+    SENSCORD_LOG_ERROR_TAGGED(
+        "libcamera", "  [inference image] width: %d, height: %d",
+        it_image_property_->width, it_image_property_->height);
+    SENSCORD_LOG_ERROR_TAGGED("libcamera", "  [rotation] %d",
+                              rotation_property_.rotation_angle);
   }
   return (result == 0);
 }
@@ -2198,26 +2223,20 @@ bool LibcameraAdapter::UpdateImageCrop(void) {
 
   if ((camera_image_size_width_ == 0) || (camera_image_size_height_ == 0)) {
     SENSCORD_LOG_ERROR_TAGGED(
-        "libcamera",
-        "Invalid parameter is set, camera image size %dx%d.",
+        "libcamera", "Invalid parameter is set, camera image size %dx%d.",
         camera_image_size_width_, camera_image_size_height_);
     v4l2_manager.Close();
     return false;
   }
 
-  const uint32_t crop_param[4] = {
-      ConvertCropHorizontalToSensor(image_crop_.x),
-      ConvertCropVerticalToSensor(image_crop_.y),
-      ConvertCropHorizontalToSensor(image_crop_.w),
-      ConvertCropVerticalToSensor(image_crop_.h)
-  };
+  const uint32_t crop_param[4] = {ConvertCropHorizontalToSensor(image_crop_.x),
+                                  ConvertCropVerticalToSensor(image_crop_.y),
+                                  ConvertCropHorizontalToSensor(image_crop_.w),
+                                  ConvertCropVerticalToSensor(image_crop_.h)};
   const uint32_t inference_window_id = INFERENCE_WINDOW_ID;
 
-  if (!v4l2_manager.SetExtControl(
-                inference_window_id,
-                (void *)crop_param,
-                sizeof(crop_param),
-                sizeof(uint32_t) * 8)) {
+  if (!v4l2_manager.SetExtControl(inference_window_id, (void *)crop_param,
+                                  sizeof(crop_param), sizeof(uint32_t) * 8)) {
     SENSCORD_LOG_ERROR_TAGGED("libcamera", "Failed to set Crop to v4l2.");
     v4l2_manager.Close();
     return false;
@@ -2250,10 +2269,11 @@ void LibcameraAdapter::UpdateImageRotationProperty(void) {
       return;
   }
 
-  senscord::Status status = reg_handle_.WriteRegister(kRegImageRotate, &reg_value);
+  senscord::Status status =
+      reg_handle_.WriteRegister(kRegImageRotate, &reg_value);
   if (!status.ok()) {
-    SENSCORD_LOG_ERROR_TAGGED(
-        "libcamera", "Failed to write image rotate register");
+    SENSCORD_LOG_ERROR_TAGGED("libcamera",
+                              "Failed to write image rotate register");
   }
 }
 

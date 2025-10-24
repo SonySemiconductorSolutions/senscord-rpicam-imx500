@@ -17,11 +17,11 @@
 #include "senscord/serialize.h"
 #include "senscord/serialize_buffer.h"
 
-#define INFO_STRING_CATEGORY_SENSOR_NAME (0x00000000)
-#define INFO_STRING_CATEGORY_SENSOR_ID (0x00000001)
-#define INFO_STRING_CATEGORY_KEY_GENERATION (0x00000002)
+#define INFO_STRING_CATEGORY_SENSOR_NAME      (0x00000000)
+#define INFO_STRING_CATEGORY_SENSOR_ID        (0x00000001)
+#define INFO_STRING_CATEGORY_KEY_GENERATION   (0x00000002)
 #define INFO_STRING_CATEGORY_FIRMWARE_VERSION (0x00010000)
-#define INFO_STRING_CATEGORY_LOADER_VERSION (0x00010001)
+#define INFO_STRING_CATEGORY_LOADER_VERSION   (0x00010001)
 #define INFO_STRING_CATEGORY_AI_MODEL_VERSION (0x00010002)
 
 namespace senscord {
@@ -192,16 +192,14 @@ class LibcameraImageStreamSource : public senscord::ImageStreamSource {
       const std::string& key,
       senscord::libcamera_image::DeviceEnumerationProperty* property);
 
-
   /**
    * @brief Set the new stream source property.
    * @param[in] (key) The key of property.
    * @param[in] (property) The location of property.
    * @return The status of function.
    */
-  senscord::Status Set(
-      const std::string& key,
-      const senscord::ImageCropProperty* property);
+  senscord::Status Set(const std::string& key,
+                       const senscord::ImageCropProperty* property);
 
   /**
    * @brief Get the stream source property.
@@ -209,9 +207,8 @@ class LibcameraImageStreamSource : public senscord::ImageStreamSource {
    * @param[out] (property) The location of property.
    * @return The status of function.
    */
-  senscord::Status Get(
-      const std::string& key,
-      senscord::ImageCropProperty* property);
+  senscord::Status Get(const std::string& key,
+                       senscord::ImageCropProperty* property);
 
   /**
    * @brief Set the new stream source property.
@@ -252,7 +249,6 @@ class LibcameraImageStreamSource : public senscord::ImageStreamSource {
       const std::string& key,
       senscord::libcamera_image::CameraImageFlipProperty* property);
 
-
   /**
    * @brief Set the new stream source property.
    * @param[in] (key) The key of property.
@@ -283,9 +279,8 @@ class LibcameraImageStreamSource : public senscord::ImageStreamSource {
       const std::string& key,
       const senscord::libcamera_image::InfoStringProperty* property);
 
-  senscord::Status Get(
-      const std::string& key,
-      senscord::libcamera_image::InfoStringProperty* property);
+  senscord::Status Get(const std::string& key,
+                       senscord::libcamera_image::InfoStringProperty* property);
   /**
    * @brief Set the new stream source property.
    * @param[in] (key) The key of property.
@@ -314,65 +309,71 @@ class LibcameraImageStreamSource : public senscord::ImageStreamSource {
       const std::string& key,
       senscord::libcamera_image::PostProcessAvailableProperty* property);
   senscord::Status Set(
-      const std::string &key,
-      const senscord::libcamera_image::CameraExposureModeProperty *property);
+      const std::string& key,
+      const senscord::libcamera_image::CameraExposureModeProperty* property);
   senscord::Status Get(
-      const std::string &key,
-      senscord::libcamera_image::CameraExposureModeProperty *property);
+      const std::string& key,
+      senscord::libcamera_image::CameraExposureModeProperty* property);
   senscord::Status Set(
-      const std::string &key,
-      const senscord::libcamera_image::CameraAutoExposureProperty *property);
+      const std::string& key,
+      const senscord::libcamera_image::CameraAutoExposureProperty* property);
   senscord::Status Get(
-      const std::string &key,
-      senscord::libcamera_image::CameraAutoExposureProperty *property);
+      const std::string& key,
+      senscord::libcamera_image::CameraAutoExposureProperty* property);
   senscord::Status Set(
-      const std::string &key,
-      const senscord::libcamera_image::CameraEvCompensationProperty *property);
+      const std::string& key,
+      const senscord::libcamera_image::CameraEvCompensationProperty* property);
   senscord::Status Get(
-      const std::string &key,
-      senscord::libcamera_image::CameraEvCompensationProperty *property);
+      const std::string& key,
+      senscord::libcamera_image::CameraEvCompensationProperty* property);
   senscord::Status Set(
-      const std::string &key,
-      const senscord::libcamera_image::CameraAntiFlickerModeProperty *property);
+      const std::string& key,
+      const senscord::libcamera_image::CameraAntiFlickerModeProperty* property);
   senscord::Status Get(
-      const std::string &key,
-      senscord::libcamera_image::CameraAntiFlickerModeProperty *property);
+      const std::string& key,
+      senscord::libcamera_image::CameraAntiFlickerModeProperty* property);
   senscord::Status Set(
-      const std::string &key,
-      const senscord::libcamera_image::CameraAutoExposureMeteringProperty *property);
+      const std::string& key,
+      const senscord::libcamera_image::CameraAutoExposureMeteringProperty*
+          property);
   senscord::Status Get(
-      const std::string &key,
-      senscord::libcamera_image::CameraAutoExposureMeteringProperty *property);
+      const std::string& key,
+      senscord::libcamera_image::CameraAutoExposureMeteringProperty* property);
   senscord::Status Set(
-      const std::string &key,
-      const senscord::libcamera_image::CameraManualExposureProperty *property);
+      const std::string& key,
+      const senscord::libcamera_image::CameraManualExposureProperty* property);
   senscord::Status Get(
-      const std::string &key,
-      senscord::libcamera_image::CameraManualExposureProperty *property);
+      const std::string& key,
+      senscord::libcamera_image::CameraManualExposureProperty* property);
   senscord::Status Set(
-      const std::string &key,
-      const senscord::libcamera_image::CameraTemperatureProperty *property);
+      const std::string& key,
+      const senscord::libcamera_image::CameraTemperatureProperty* property);
   senscord::Status Get(
-      const std::string &key,
-      senscord::libcamera_image::CameraTemperatureProperty *property);
+      const std::string& key,
+      senscord::libcamera_image::CameraTemperatureProperty* property);
   senscord::Status Set(
-      const std::string &key,
-      const senscord::libcamera_image::CameraImageSizeProperty *property);
+      const std::string& key,
+      const senscord::libcamera_image::CameraImageSizeProperty* property);
   senscord::Status Get(
-      const std::string &key,
-      senscord::libcamera_image::CameraImageSizeProperty *property);
+      const std::string& key,
+      senscord::libcamera_image::CameraImageSizeProperty* property);
   senscord::Status Set(
-      const std::string &key,
-      const senscord::libcamera_image::CameraFrameRateProperty *property);
+      const std::string& key,
+      const senscord::libcamera_image::CameraFrameRateProperty* property);
   senscord::Status Get(
-      const std::string &key,
-      senscord::libcamera_image::CameraFrameRateProperty *property);
+      const std::string& key,
+      senscord::libcamera_image::CameraFrameRateProperty* property);
   senscord::Status Set(
-      const std::string &key,
-      const senscord::libcamera_image::CameraImageProperty *property);
+      const std::string& key,
+      const senscord::libcamera_image::IspImageProperty* property);
+  senscord::Status Get(const std::string& key,
+                       senscord::libcamera_image::IspImageProperty* property);
+  senscord::Status Set(
+      const std::string& key,
+      const senscord::libcamera_image::IspFrameRateProperty* property);
   senscord::Status Get(
-      const std::string &key,
-      senscord::libcamera_image::CameraImageProperty *property);
+      const std::string& key,
+      senscord::libcamera_image::IspFrameRateProperty* property);
 
  private:
   bool GetDeviceID(void);
@@ -399,6 +400,7 @@ class LibcameraImageStreamSource : public senscord::ImageStreamSource {
   CameraImageSizeProperty camera_image_size_;
   CameraFrameRateProperty camera_frame_rate_;
   ImageCropProperty image_crop_;
+  IspFrameRateProperty isp_frame_rate_;
 };
 
 }  // namespace libcamera_image

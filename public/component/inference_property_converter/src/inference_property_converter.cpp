@@ -24,7 +24,7 @@ namespace senscord {
  * @param[in] src Char array of copy source.
  */
 template <size_t dst_size>
-static void StrCpyToCharArray(char (&dst)[dst_size], const char *src) {
+static void StrCpyToCharArray(char (&dst)[dst_size], const char* src) {
   if (dst_size) {
     const size_t src_size = strnlen(src, dst_size - 1);
     memcpy(dst, src, src_size);
@@ -69,9 +69,11 @@ Status InferencePropertyConverterLibrary::Init(ConverterCollector* collector) {
   AddType(senscord_temperature_enable_property_t, TemperatureEnableProperty);
   AddType(senscord_temperature_property_t, TemperatureProperty);
   AddType(senscord_input_data_type_property_t, InputDataTypeProperty);
-  AddType(senscord_camera_auto_exposure_metering_property_t, CameraAutoExposureMeteringProperty);
+  AddType(senscord_camera_auto_exposure_metering_property_t,
+          CameraAutoExposureMeteringProperty);
   AddType(senscord_image_crop_property_t, ImageCropProperty);
-  AddType(senscord_camera_image_property_t, CameraImageProperty);
+  AddType(senscord_isp_image_property_t, IspImageProperty);
+  AddType(senscord_isp_frame_rate_property_t, IspFrameRateProperty);
   return Status::OK();
 }
 
@@ -251,11 +253,11 @@ Status InferencePropertyConverterLibrary::cxx_to_c(
 Status InferencePropertyConverterLibrary::c_to_cxx(
     const senscord_camera_auto_exposure_metering_property_t& src,
     CameraAutoExposureMeteringProperty* dst) {
-  dst->mode = static_cast<CameraAutoExposureMeteringMode>(src.mode);
-  dst->window.top = src.window.top;
-  dst->window.left = src.window.left;
+  dst->mode          = static_cast<CameraAutoExposureMeteringMode>(src.mode);
+  dst->window.top    = src.window.top;
+  dst->window.left   = src.window.left;
   dst->window.bottom = src.window.bottom;
-  dst->window.right = src.window.right;
+  dst->window.right  = src.window.right;
 
   return Status::OK();
 }
@@ -263,11 +265,12 @@ Status InferencePropertyConverterLibrary::c_to_cxx(
 Status InferencePropertyConverterLibrary::cxx_to_c(
     const CameraAutoExposureMeteringProperty& src,
     senscord_camera_auto_exposure_metering_property_t* dst) {
-  dst->mode = static_cast<senscord_camera_auto_exposure_metering_mode_t>(src.mode);
-  dst->window.top = src.window.top;
-  dst->window.left = src.window.left;
+  dst->mode =
+      static_cast<senscord_camera_auto_exposure_metering_mode_t>(src.mode);
+  dst->window.top    = src.window.top;
+  dst->window.left   = src.window.left;
   dst->window.bottom = src.window.bottom;
-  dst->window.right = src.window.right;
+  dst->window.right  = src.window.right;
 
   return Status::OK();
 }
@@ -460,13 +463,12 @@ Status InferencePropertyConverterLibrary::cxx_to_c(
 
 // TemperatureProperty
 Status InferencePropertyConverterLibrary::c_to_cxx(
-    const senscord_temperature_property_t& src,
-    TemperatureProperty* dst) {
+    const senscord_temperature_property_t& src, TemperatureProperty* dst) {
   uint32_t id;
   TemperatureInfo temp_info;
   dst->temperatures.clear();
   for (uint32_t i = 0; i < src.count; ++i) {
-    id = src.temperatures[i].sensor_id;
+    id                    = src.temperatures[i].sensor_id;
     temp_info.temperature = src.temperatures[i].temperature;
     temp_info.description = src.temperatures[i].description;
     dst->temperatures[id] = temp_info;
@@ -475,16 +477,16 @@ Status InferencePropertyConverterLibrary::c_to_cxx(
 }
 
 Status InferencePropertyConverterLibrary::cxx_to_c(
-    const TemperatureProperty& src,
-    senscord_temperature_property_t* dst) {
+    const TemperatureProperty& src, senscord_temperature_property_t* dst) {
   uint32_t i = 0;
   for (const auto& it : src.temperatures) {
     if (i >= kTemperatureListMax) {
       break;
     }
-    dst->temperatures[i].sensor_id = it.first;
+    dst->temperatures[i].sensor_id   = it.first;
     dst->temperatures[i].temperature = it.second.temperature;
-    StrCpyToCharArray(dst->temperatures[i].description, it.second.description.c_str());
+    StrCpyToCharArray(dst->temperatures[i].description,
+                      it.second.description.c_str());
     ++i;
   }
   dst->count = i;
@@ -515,43 +517,54 @@ Status InferencePropertyConverterLibrary::cxx_to_c(
 
 // ImageCropProperty
 Status InferencePropertyConverterLibrary::c_to_cxx(
-    const senscord_image_crop_property_t& src,
-    ImageCropProperty* dst) {
-  dst->left = src.left;
-  dst->top = src.top;
-  dst->width = src.width;
+    const senscord_image_crop_property_t& src, ImageCropProperty* dst) {
+  dst->left   = src.left;
+  dst->top    = src.top;
+  dst->width  = src.width;
   dst->height = src.height;
   return Status::OK();
 }
 
 Status InferencePropertyConverterLibrary::cxx_to_c(
-    const ImageCropProperty& src,
-    senscord_image_crop_property_t* dst) {
-  dst->left = src.left;
-  dst->top = src.top;
-  dst->width = src.width;
+    const ImageCropProperty& src, senscord_image_crop_property_t* dst) {
+  dst->left   = src.left;
+  dst->top    = src.top;
+  dst->width  = src.width;
   dst->height = src.height;
   return Status::OK();
 }
 
-// CameraImageProperty
+// IspImageProperty
 Status InferencePropertyConverterLibrary::c_to_cxx(
-    const senscord_camera_image_property_t& src,
-    CameraImageProperty* dst) {
-  dst->width = src.width;
-  dst->height = src.height;
+    const senscord_isp_image_property_t& src, IspImageProperty* dst) {
+  dst->width        = src.width;
+  dst->height       = src.height;
   dst->stride_bytes = src.stride_bytes;
   memcpy(dst->pixel_format, src.pixel_format, SENSCORD_PIXEL_FORMAT_LENGTH);
   return Status::OK();
 }
 
 Status InferencePropertyConverterLibrary::cxx_to_c(
-    const CameraImageProperty& src,
-    senscord_camera_image_property_t* dst) {
-  dst->width = src.width;
-  dst->height = src.height;
+    const IspImageProperty& src, senscord_isp_image_property_t* dst) {
+  dst->width        = src.width;
+  dst->height       = src.height;
   dst->stride_bytes = src.stride_bytes;
   memcpy(dst->pixel_format, src.pixel_format, SENSCORD_PIXEL_FORMAT_LENGTH);
+  return Status::OK();
+}
+
+// IspFrameRateProperty
+Status InferencePropertyConverterLibrary::c_to_cxx(
+    const senscord_isp_frame_rate_property_t& src, IspFrameRateProperty* dst) {
+  dst->num   = src.num;
+  dst->denom = src.denom;
+  return Status::OK();
+}
+
+Status InferencePropertyConverterLibrary::cxx_to_c(
+    const IspFrameRateProperty& src, senscord_isp_frame_rate_property_t* dst) {
+  dst->num   = src.num;
+  dst->denom = src.denom;
   return Status::OK();
 }
 
