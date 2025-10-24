@@ -5,23 +5,23 @@
  */
 #include "libcamera_image_stream_source.h"
 
+#include <fcntl.h>
 #include <libcamera/control_ids.h>
 #include <libcamera/controls.h>
+#include <linux/videodev2.h>
+#include <sys/ioctl.h>
 
-#include <string>
+#include <chrono>
 #include <filesystem>
 #include <iomanip>
 #include <sstream>
-#include <chrono>
+#include <string>
 #include <thread>
-#include <sys/ioctl.h>
-#include <linux/videodev2.h>
-#include <fcntl.h>
 
 #include "rpicam_app_adapter.h"
-#include "v4l2_ctrl_manager.h"
 #include "senscord/logger.h"
 #include "senscord/status.h"
+#include "v4l2_ctrl_manager.h"
 
 namespace fs = std::filesystem;
 
@@ -47,7 +47,8 @@ senscord::Status LibcameraImageStreamSource::Open(
   core_ = core;
   util_ = util;
 
-  memset(ai_model_bundle_id_.ai_model_bundle_id, 0, sizeof(char) * kAIModelBundleIdLength);
+  memset(ai_model_bundle_id_.ai_model_bundle_id, 0,
+         sizeof(char) * kAIModelBundleIdLength);
 
   // register optional properties
   SENSCORD_REGISTER_PROPERTY(util_,
@@ -86,16 +87,21 @@ senscord::Status LibcameraImageStreamSource::Open(
       util_, senscord::libcamera_image::kLibcameraCameraAutoExposurePropertyKey,
       senscord::libcamera_image::CameraAutoExposureProperty);
   SENSCORD_REGISTER_PROPERTY(
-      util_, senscord::libcamera_image::kLibcameraCameraEvCompensationPropertyKey,
+      util_,
+      senscord::libcamera_image::kLibcameraCameraEvCompensationPropertyKey,
       senscord::libcamera_image::CameraEvCompensationProperty);
   SENSCORD_REGISTER_PROPERTY(
-      util_, senscord::libcamera_image::kLibcameraCameraAntiFlickerModePropertyKey,
+      util_,
+      senscord::libcamera_image::kLibcameraCameraAntiFlickerModePropertyKey,
       senscord::libcamera_image::CameraAntiFlickerModeProperty);
   SENSCORD_REGISTER_PROPERTY(
-      util_, senscord::libcamera_image::kLibcameraCameraAutoExposureMeteringPropertykey,
+      util_,
+      senscord::libcamera_image::
+          kLibcameraCameraAutoExposureMeteringPropertykey,
       senscord::libcamera_image::CameraAutoExposureMeteringProperty);
   SENSCORD_REGISTER_PROPERTY(
-      util_, senscord::libcamera_image::kLibcameraCameraManualExposurePropertykey,
+      util_,
+      senscord::libcamera_image::kLibcameraCameraManualExposurePropertykey,
       senscord::libcamera_image::CameraManualExposureProperty);
   SENSCORD_REGISTER_PROPERTY(
       util_, senscord::libcamera_image::kLibcameraTemperaturePropertyKey,
@@ -107,13 +113,16 @@ senscord::Status LibcameraImageStreamSource::Open(
       util_, senscord::libcamera_image::kLibcameraCameraFrameRatePropertykey,
       senscord::libcamera_image::CameraFrameRateProperty);
   SENSCORD_REGISTER_PROPERTY(
-      util_, senscord::libcamera_image::kLibcameraCameraImagePropertyKey,
-      senscord::libcamera_image::CameraImageProperty);
+      util_, senscord::libcamera_image::kLibcameraIspImagePropertyKey,
+      senscord::libcamera_image::IspImageProperty);
+  SENSCORD_REGISTER_PROPERTY(
+      util_, senscord::libcamera_image::kLibcameraIspFrameRatePropertyKey,
+      senscord::libcamera_image::IspFrameRateProperty);
 
-  std::string device = "";
-  uint64_t uint_value = 0;
+  std::string device       = "";
+  uint64_t uint_value      = 0;
   std::string string_value = "";
-  senscord::Status status = senscord::Status::OK();
+  senscord::Status status  = senscord::Status::OK();
 
   // parse arguments
   {
@@ -125,8 +134,8 @@ senscord::Status LibcameraImageStreamSource::Open(
 
   // parse arguments: ImageProperty
   {
-    image_property_.width = 640;
-    image_property_.height = 480;
+    image_property_.width        = 640;
+    image_property_.height       = 480;
     image_property_.pixel_format = senscord::kPixelFormatBGR24;
 
     {
@@ -150,8 +159,7 @@ senscord::Status LibcameraImageStreamSource::Open(
       }
     }
     util_->UpdateChannelProperty(AITRIOS_SENSOR_CHANNEL_ID_INFERENCE_RAW_IMAGE,
-                               senscord::kImagePropertyKey,
-                               &image_property_);
+                                 senscord::kImagePropertyKey, &image_property_);
     // Do not treat image_property_.stride_bytes in this time, because it will
     // be filled by libcamera_adapter::Configure()
     util_->SendEventPropertyUpdated(senscord::kImagePropertyKey);
@@ -160,8 +168,8 @@ senscord::Status LibcameraImageStreamSource::Open(
   // parse arguments: FrameRateProperty
   {
     senscord::FrameRateProperty framerate_property = {};
-    framerate_property.num = 30;
-    framerate_property.denom = 1;
+    framerate_property.num                         = 30;
+    framerate_property.denom                       = 1;
 
     status = util_->GetStreamArgument("fps", &uint_value);
     if (status.ok()) {
@@ -173,7 +181,7 @@ senscord::Status LibcameraImageStreamSource::Open(
 
   {
     display_channel_ = AITRIOS_SENSOR_CHANNEL_ID_INFERENCE_INPUT_IMAGE;
-    status = util_->GetStreamArgument("display_channel", &uint_value);
+    status           = util_->GetStreamArgument("display_channel", &uint_value);
     if (!status.ok()) {
       display_channel_ = static_cast<uint32_t>(uint_value);
     }
@@ -198,8 +206,8 @@ senscord::Status LibcameraImageStreamSource::Open(
 
   // Set Input Tensor channel info
   senscord::ImageProperty inference_image_property;
-  inference_image_property.width = image_property_.width;
-  inference_image_property.height = image_property_.height;
+  inference_image_property.width        = image_property_.width;
+  inference_image_property.height       = image_property_.height;
   inference_image_property.pixel_format = "image_rgb24";
 
   util_->UpdateChannelProperty(AITRIOS_SENSOR_CHANNEL_ID_INFERENCE_INPUT_IMAGE,
@@ -211,9 +219,9 @@ senscord::Status LibcameraImageStreamSource::Open(
   // get device_id
   if (imx500_device_id_.empty()) {
     if (!GetDeviceID()) {
-      return SENSCORD_STATUS_FAIL(
-        "libcamera", senscord::Status::kCauseInvalidArgument,
-        "Open() Failed to get device_id");
+      return SENSCORD_STATUS_FAIL("libcamera",
+                                  senscord::Status::kCauseInvalidArgument,
+                                  "Open() Failed to get device_id");
     }
 
     SENSCORD_LOG_INFO("Get device_id: %s", imx500_device_id_.c_str());
@@ -243,7 +251,8 @@ senscord::Status LibcameraImageStreamSource::Start() {
   std::unique_lock<std::mutex> _lck(device_id_mutex_);
 
   // Apply initial image property
-  adapter_.GetImageProperty(&image_property_, AITRIOS_SENSOR_CHANNEL_ID_INFERENCE_RAW_IMAGE);
+  adapter_.GetImageProperty(&image_property_,
+                            AITRIOS_SENSOR_CHANNEL_ID_INFERENCE_RAW_IMAGE);
   status = Set(senscord::kImagePropertyKey, &image_property_);
   if (!status.ok()) {
     util_->SendEventError(status);
@@ -308,21 +317,24 @@ senscord::Status LibcameraImageStreamSource::Get(
 
   // TODO: multi-plane support
   senscord::ChannelInfo info0 = {};
-  info0.raw_data_type = senscord::kRawDataTypeMeta;
-  info0.description = "meta";
+  info0.raw_data_type         = senscord::kRawDataTypeMeta;
+  info0.description           = "meta";
 
-  property->channels.insert(std::make_pair(AITRIOS_SENSOR_CHANNEL_ID_INFERENCE_OUTPUT, info0));
+  property->channels.insert(
+      std::make_pair(AITRIOS_SENSOR_CHANNEL_ID_INFERENCE_OUTPUT, info0));
   senscord::ChannelInfo info1 = {};
-  info1.raw_data_type = senscord::kRawDataTypeImage;
-  info1.description = "input_tensor";
+  info1.raw_data_type         = senscord::kRawDataTypeImage;
+  info1.description           = "input_tensor";
 
-  property->channels.insert(std::make_pair(AITRIOS_SENSOR_CHANNEL_ID_INFERENCE_INPUT_IMAGE, info1));
+  property->channels.insert(
+      std::make_pair(AITRIOS_SENSOR_CHANNEL_ID_INFERENCE_INPUT_IMAGE, info1));
 
   senscord::ChannelInfo info2 = {};
-  info2.raw_data_type = senscord::kRawDataTypeImage;
-  info2.description = "full_image";
+  info2.raw_data_type         = senscord::kRawDataTypeImage;
+  info2.description           = "full_image";
 
-  property->channels.insert(std::make_pair(AITRIOS_SENSOR_CHANNEL_ID_INFERENCE_RAW_IMAGE, info2));
+  property->channels.insert(
+      std::make_pair(AITRIOS_SENSOR_CHANNEL_ID_INFERENCE_RAW_IMAGE, info2));
 
   return senscord::Status::OK();
 }
@@ -347,7 +359,7 @@ senscord::Status LibcameraImageStreamSource::Set(
 
   libcamera_image::AccessProperty access_property = {};
   access_property.type = libcamera_image::AccessProperty::Type::kControl;
-  access_property.id = "FrameDurationLimits";
+  access_property.id   = "FrameDurationLimits";
   access_property.value.Set(frame_duration);
 
   senscord::Status status = Set(kLibcameraAccessPropertyKey, &access_property);
@@ -377,7 +389,7 @@ senscord::Status LibcameraImageStreamSource::Set(
   SENSCORD_LOG_DEBUG_TAGGED("libcamera",
                             "LibcameraImageStreamSource::Set(ImageProperty)");
 
-  image_property_ = *property;
+  image_property_         = *property;
   senscord::Status status = adapter_.Configure(image_property_);
   if (!status.ok()) {
     util_->SendEventError(status);
@@ -428,11 +440,8 @@ senscord::Status LibcameraImageStreamSource::Set(
   senscord::Status status;
 
   image_crop_ = *property;
-  status = adapter_.SetImageCrop(
-                            image_crop_.left,
-                            image_crop_.top,
-                            image_crop_.width,
-                            image_crop_.height);
+  status      = adapter_.SetImageCrop(image_crop_.left, image_crop_.top,
+                                      image_crop_.width, image_crop_.height);
   if (!status.ok()) {
     util_->SendEventError(status);
     return status;
@@ -565,9 +574,8 @@ senscord::Status LibcameraImageStreamSource::Set(
   senscord::Status status;
 
   camera_image_flip_ = *property;
-  status = adapter_.SetImageFlip(
-                    camera_image_flip_.flip_horizontal,
-                    camera_image_flip_.flip_vertical);
+  status             = adapter_.SetImageFlip(camera_image_flip_.flip_horizontal,
+                                             camera_image_flip_.flip_vertical);
 
   if (!status.ok()) {
     util_->SendEventError(status);
@@ -596,8 +604,8 @@ senscord::Status LibcameraImageStreamSource::Set(
   senscord::Status status;
   status = adapter_.SetProperty(property);
   if (!status.ok()) {
-     util_->SendEventError(status);
-     return status;
+    util_->SendEventError(status);
+    return status;
   }
 
   memcpy(ai_model_bundle_id_.ai_model_bundle_id, property->ai_model_bundle_id,
@@ -636,7 +644,8 @@ senscord::Status LibcameraImageStreamSource::Get(
     std::string imx500_str = "IMX500";
     strncpy(property->info, imx500_str.c_str(), imx500_str.size());
   } else if (property->category == INFO_STRING_CATEGORY_SENSOR_ID) {
-    strncpy(property->info, imx500_device_id_.c_str(), imx500_device_id_.length());
+    strncpy(property->info, imx500_device_id_.c_str(),
+            imx500_device_id_.length());
     SENSCORD_LOG_INFO("GetProperty device_id: %s", property->info);
   } else if (property->category == INFO_STRING_CATEGORY_KEY_GENERATION) {
     strncpy(property->info, "0001", 4);
@@ -649,11 +658,12 @@ senscord::Status LibcameraImageStreamSource::Get(
     std::string ai_model_version;
     status = adapter_.GetAIModelVersion(ai_model_version);
     if (!status.ok()) {
-       util_->SendEventError(status);
-       return status;
+      util_->SendEventError(status);
+      return status;
     }
 
-    strncpy(property->info, ai_model_version.c_str(), ai_model_version.length());
+    strncpy(property->info, ai_model_version.c_str(),
+            ai_model_version.length());
     SENSCORD_LOG_INFO("GetProperty ai_model_version: %s", property->info);
   } else {
     return SENSCORD_STATUS_FAIL(
@@ -721,40 +731,40 @@ senscord::Status LibcameraImageStreamSource::Set(
     case KCameraExposureModeAuto:
       status = adapter_.SetExposureMode(kExposureModeParamAuto);
       if (!status.ok()) {
-         util_->SendEventError(status);
-         return status;
+        util_->SendEventError(status);
+        return status;
       }
 
       break;
     case KCameraExposureModeGainFix:
       status = adapter_.SetExposureMode(kExposureModeParamGainFix);
       if (!status.ok()) {
-         util_->SendEventError(status);
-         return status;
+        util_->SendEventError(status);
+        return status;
       }
 
       break;
     case KCameraExposureModeTimeFix:
       status = adapter_.SetExposureMode(kExposureModeParamTimeFix);
       if (!status.ok()) {
-         util_->SendEventError(status);
-         return status;
+        util_->SendEventError(status);
+        return status;
       }
 
       break;
     case KCameraExposureModeManual:
       status = adapter_.SetExposureMode(kExposureModeParamManual);
       if (!status.ok()) {
-         util_->SendEventError(status);
-         return status;
+        util_->SendEventError(status);
+        return status;
       }
 
       break;
     case KCameraExposureModeHold:
       status = adapter_.SetExposureMode(kExposureModeParamHold);
       if (!status.ok()) {
-         util_->SendEventError(status);
-         return status;
+        util_->SendEventError(status);
+        return status;
       }
 
       break;
@@ -790,11 +800,10 @@ senscord::Status LibcameraImageStreamSource::Set(
   senscord::Status status;
 
   camera_auto_exposure_ = *property;
-  status = adapter_.SetAutoExposureParam(
-                            camera_auto_exposure_.max_exposure_time,
-                            camera_auto_exposure_.min_exposure_time,
-                            camera_auto_exposure_.max_gain,
-                            camera_auto_exposure_.convergence_speed);
+  status                = adapter_.SetAutoExposureParam(
+      camera_auto_exposure_.max_exposure_time,
+      camera_auto_exposure_.min_exposure_time, camera_auto_exposure_.max_gain,
+      camera_auto_exposure_.convergence_speed);
   if (!status.ok()) {
     util_->SendEventError(status);
     return status;
@@ -823,7 +832,8 @@ senscord::Status LibcameraImageStreamSource::Set(
 
   camera_ev_compensation_ = *property;
 
-  status = adapter_.SetAeEvCompensation(camera_ev_compensation_.ev_compensation);
+  status =
+      adapter_.SetAeEvCompensation(camera_ev_compensation_.ev_compensation);
   if (!status.ok()) {
     util_->SendEventError(status);
     return status;
@@ -915,9 +925,8 @@ senscord::Status LibcameraImageStreamSource::Set(
   senscord::Status status;
 
   camera_manual_exposure_ = *property;
-  status = adapter_.SetManualExposureParam(
-                    camera_manual_exposure_.exposure_time,
-                    camera_manual_exposure_.gain);
+  status                  = adapter_.SetManualExposureParam(
+      camera_manual_exposure_.exposure_time, camera_manual_exposure_.gain);
   if (!status.ok()) {
     util_->SendEventError(status);
     return status;
@@ -938,7 +947,8 @@ senscord::Status LibcameraImageStreamSource::Get(
 
 senscord::Status LibcameraImageStreamSource::Set(
     const std::string &key,
-    const senscord::libcamera_image::CameraAutoExposureMeteringProperty *property) {
+    const senscord::libcamera_image::CameraAutoExposureMeteringProperty
+        *property) {
   SENSCORD_LOG_DEBUG_TAGGED("libcamera",
                             "LibcameraImageStreamSource::Set(libcamera_image::"
                             "CameraAutoExposureMeteringProperty)");
@@ -955,13 +965,9 @@ senscord::Status LibcameraImageStreamSource::Set(
 
       break;
     case kCameraAutoExposureMeteringModeUserWindow:
-      AeWindow = {
-          property->window.top,
-          property->window.left,
-          property->window.bottom,
-          property->window.right
-      };
-      status = adapter_.SetAeMetering(kAeMeteringUserWindow, AeWindow);
+      AeWindow = {property->window.top, property->window.left,
+                  property->window.bottom, property->window.right};
+      status   = adapter_.SetAeMetering(kAeMeteringUserWindow, AeWindow);
       if (!status.ok()) {
         util_->SendEventError(status);
         return status;
@@ -1021,9 +1027,8 @@ senscord::Status LibcameraImageStreamSource::Set(
   senscord::Status status;
 
   camera_image_size_ = *property;
-  status = adapter_.SetImageSize(
-                    camera_image_size_.width,
-                    camera_image_size_.height);
+  status             = adapter_.SetImageSize(camera_image_size_.width,
+                                             camera_image_size_.height);
   if (!status.ok()) {
     util_->SendEventError(status);
     return status;
@@ -1051,9 +1056,8 @@ senscord::Status LibcameraImageStreamSource::Set(
   senscord::Status status;
 
   camera_frame_rate_ = *property;
-  status = adapter_.SetFrameRate(
-                    camera_frame_rate_.num,
-                    camera_frame_rate_.denom);
+  status =
+      adapter_.SetFrameRate(camera_frame_rate_.num, camera_frame_rate_.denom);
   if (!status.ok()) {
     util_->SendEventError(status);
     return status;
@@ -1074,16 +1078,14 @@ senscord::Status LibcameraImageStreamSource::Get(
 
 senscord::Status LibcameraImageStreamSource::Set(
     const std::string &key,
-    const senscord::libcamera_image::CameraImageProperty *property) {
+    const senscord::libcamera_image::IspImageProperty *property) {
   SENSCORD_LOG_DEBUG_TAGGED("libcamera",
                             "LibcameraImageStreamSource::Set(libcamera_image::"
-                            "CameraImageProperty)");
+                            "IspImageProperty)");
   senscord::Status status;
-  CameraImageProperty camera_image = *property;
-  status = adapter_.SetCameraImage(
-                    camera_image.width,
-                    camera_image.height,
-                    camera_image.pixel_format);
+  IspImageProperty isp_image = *property;
+  status = adapter_.SetIspImage(isp_image.width, isp_image.height,
+                                isp_image.pixel_format);
   if (!status.ok()) {
     util_->SendEventError(status);
     return status;
@@ -1094,26 +1096,49 @@ senscord::Status LibcameraImageStreamSource::Set(
 
 senscord::Status LibcameraImageStreamSource::Get(
     const std::string &key,
-    senscord::libcamera_image::CameraImageProperty *property) {
+    senscord::libcamera_image::IspImageProperty *property) {
   SENSCORD_LOG_DEBUG_TAGGED("libcamera",
                             "LibcameraImageStreamSource::Get(libcamera_image::"
-                            "CameraImageProperty)");
+                            "IspImageProperty)");
   senscord::Status status;
-  CameraImageProperty camera_image;
-  status = adapter_.GetCameraImage(
-                    camera_image.width,
-                    camera_image.height,
-                    camera_image.stride_bytes,
-                    camera_image.pixel_format);
+  IspImageProperty isp_image;
+  status = adapter_.GetIspImage(isp_image.width, isp_image.height,
+                                isp_image.stride_bytes, isp_image.pixel_format);
   if (!status.ok()) {
     util_->SendEventError(status);
     return status;
   }
 
-  *property = camera_image;
+  *property = isp_image;
   return senscord::Status::OK();
 }
 
+senscord::Status LibcameraImageStreamSource::Set(
+    const std::string &key,
+    const senscord::libcamera_image::IspFrameRateProperty *property) {
+  SENSCORD_LOG_DEBUG_TAGGED("libcamera",
+                            "LibcameraImageStreamSource::Set(libcamera_image::"
+                            "IspFrameRateProperty)");
+  senscord::Status status;
+  isp_frame_rate_ = *property;
+  status = adapter_.SetIspFrameRate(isp_frame_rate_.num, isp_frame_rate_.denom);
+  if (!status.ok()) {
+    util_->SendEventError(status);
+    return status;
+  }
+
+  return senscord::Status::OK();
+}
+
+senscord::Status LibcameraImageStreamSource::Get(
+    const std::string &key,
+    senscord::libcamera_image::IspFrameRateProperty *property) {
+  SENSCORD_LOG_DEBUG_TAGGED("libcamera",
+                            "LibcameraImageStreamSource::Get(libcamera_image::"
+                            "IspFrameRateProperty)");
+  *property = isp_frame_rate_;
+  return senscord::Status::OK();
+}
 
 bool LibcameraImageStreamSource::GetDeviceID(void) {
   std::string device_id_str = "";
@@ -1122,7 +1147,8 @@ bool LibcameraImageStreamSource::GetDeviceID(void) {
   std::unique_lock<std::mutex> _lck(device_id_mutex_);
 
   /* Start */
-  adapter_.GetImageProperty(&image_property_, AITRIOS_SENSOR_CHANNEL_ID_INFERENCE_RAW_IMAGE);
+  adapter_.GetImageProperty(&image_property_,
+                            AITRIOS_SENSOR_CHANNEL_ID_INFERENCE_RAW_IMAGE);
   status = adapter_.Configure(image_property_);
   if (!status.ok()) {
     SENSCORD_LOG_WARNING("Failed to configure camera");
@@ -1137,7 +1163,7 @@ bool LibcameraImageStreamSource::GetDeviceID(void) {
 
   /* GetFrames */
   const int max_try_count = 20; /* kWaitOnGetFrames(4ms) * 20 = 80ms */
-  int try_count = 0;
+  int try_count           = 0;
   while (max_try_count > try_count) {
     std::vector<FrameInfo> frames;
     adapter_.GetFrames(&frames, true);
@@ -1146,7 +1172,8 @@ bool LibcameraImageStreamSource::GetDeviceID(void) {
       try_count++;
       continue;
     } else {
-      /* If dry_run is enabled, an empty frame is got, so releasing is unnecessary. */
+      /* If dry_run is enabled, an empty frame is got, so releasing is
+       * unnecessary. */
       break;
     }
   }

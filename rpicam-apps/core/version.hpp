@@ -5,8 +5,7 @@
  */
 #pragma once
 
-extern "C"
-{
-	const char *RPiCamAppsVersion();
-	const char *RPiCamAppsCapabilities();
+extern "C" {
+const char *RPiCamAppsVersion();
+const char *RPiCamAppsCapabilities();
 }

@@ -11,12 +11,10 @@
 
 #include "options.hpp"
 
-struct StillOptions : public Options
-{
-	StillOptions() : Options()
-	{
-		using namespace boost::program_options;
-		// clang-format off
+struct StillOptions : public Options {
+  StillOptions() : Options() {
+    using namespace boost::program_options;
+    // clang-format off
 		options_.add_options()
 			("quality,q", value<int>(&quality)->default_value(93),
 			 "Set the JPEG quality parameter")
@@ -51,79 +49,78 @@ struct StillOptions : public Options
 			("zsl", value<bool>(&zsl)->default_value(false)->implicit_value(true),
 			 "Switch to AfModeAuto and trigger a scan just before capturing a still")
 			;
-		// clang-format on
-	}
+    // clang-format on
+  }
 
-	int quality;
-	std::vector<std::string> exif;
-	TimeVal<std::chrono::milliseconds> timelapse;
-	uint32_t framestart;
-	bool datetime;
-	bool timestamp;
-	unsigned int restart;
-	bool keypress;
-	bool signal;
-	std::string thumb;
-	unsigned int thumb_width, thumb_height, thumb_quality;
-	std::string encoding;
-	bool raw;
-	std::string latest;
-	bool immediate;
-	bool zsl;
+  int quality;
+  std::vector<std::string> exif;
+  TimeVal<std::chrono::milliseconds> timelapse;
+  uint32_t framestart;
+  bool datetime;
+  bool timestamp;
+  unsigned int restart;
+  bool keypress;
+  bool signal;
+  std::string thumb;
+  unsigned int thumb_width, thumb_height, thumb_quality;
+  std::string encoding;
+  bool raw;
+  std::string latest;
+  bool immediate;
+  bool zsl;
 
-	virtual bool Parse(int argc, char *argv[]) override
-	{
-		if (Options::Parse(argc, argv) == false)
-			return false;
+  virtual bool Parse(int argc, char *argv[]) override {
+    if (Options::Parse(argc, argv) == false) return false;
 
-		timelapse.set(timelapse_);
+    timelapse.set(timelapse_);
 
-		if ((keypress || signal) && timelapse)
-			throw std::runtime_error("keypress/signal and timelapse options are mutually exclusive");
-		if (strcasecmp(thumb.c_str(), "none") == 0)
-			thumb_quality = 0;
-		else if (sscanf(thumb.c_str(), "%u:%u:%u", &thumb_width, &thumb_height, &thumb_quality) != 3)
-			throw std::runtime_error("bad thumbnail parameters " + thumb);
-		if (strcasecmp(encoding.c_str(), "jpg") == 0)
-			encoding = "jpg";
-		else if (strcasecmp(encoding.c_str(), "yuv420") == 0)
-			encoding = "yuv420";
-		else if (strcasecmp(encoding.c_str(), "rgb") == 0 || strcasecmp(encoding.c_str(), "rgb24") == 0)
-			encoding = "rgb24";
-		else if (strcasecmp(encoding.c_str(), "rgb48") == 0)
-			encoding = "rgb48";
-		else if (strcasecmp(encoding.c_str(), "png") == 0)
-			encoding = "png";
-		else if (strcasecmp(encoding.c_str(), "bmp") == 0)
-			encoding = "bmp";
-		else
-			throw std::runtime_error("invalid encoding format " + encoding);
-		return true;
-	}
-	virtual void Print() const override
-	{
-		Options::Print();
-		std::cerr << "    encoding: " << encoding << std::endl;
-		std::cerr << "    quality: " << quality << std::endl;
-		std::cerr << "    raw: " << raw << std::endl;
-		std::cerr << "    restart: " << restart << std::endl;
-		std::cerr << "    timelapse: " << timelapse.get() << "ms" << std::endl;
-		std::cerr << "    framestart: " << framestart << std::endl;
-		std::cerr << "    datetime: " << datetime << std::endl;
-		std::cerr << "    timestamp: " << timestamp << std::endl;
-		std::cerr << "    keypress: " << keypress << std::endl;
-		std::cerr << "    signal: " << signal << std::endl;
-		std::cerr << "    thumbnail width: " << thumb_width << std::endl;
-		std::cerr << "    thumbnail height: " << thumb_height << std::endl;
-		std::cerr << "    thumbnail quality: " << thumb_quality << std::endl;
-		std::cerr << "    latest: " << latest << std::endl;
-		std::cerr << "    immediate " << immediate << std::endl;
-		std::cerr << "    AF on capture: " << af_on_capture << std::endl;
-		std::cerr << "    Zero shutter lag: " << zsl << std::endl;
-		for (auto &s : exif)
-			std::cerr << "    EXIF: " << s << std::endl;
-	}
+    if ((keypress || signal) && timelapse)
+      throw std::runtime_error(
+          "keypress/signal and timelapse options are mutually exclusive");
+    if (strcasecmp(thumb.c_str(), "none") == 0)
+      thumb_quality = 0;
+    else if (sscanf(thumb.c_str(), "%u:%u:%u", &thumb_width, &thumb_height,
+                    &thumb_quality) != 3)
+      throw std::runtime_error("bad thumbnail parameters " + thumb);
+    if (strcasecmp(encoding.c_str(), "jpg") == 0)
+      encoding = "jpg";
+    else if (strcasecmp(encoding.c_str(), "yuv420") == 0)
+      encoding = "yuv420";
+    else if (strcasecmp(encoding.c_str(), "rgb") == 0 ||
+             strcasecmp(encoding.c_str(), "rgb24") == 0)
+      encoding = "rgb24";
+    else if (strcasecmp(encoding.c_str(), "rgb48") == 0)
+      encoding = "rgb48";
+    else if (strcasecmp(encoding.c_str(), "png") == 0)
+      encoding = "png";
+    else if (strcasecmp(encoding.c_str(), "bmp") == 0)
+      encoding = "bmp";
+    else
+      throw std::runtime_error("invalid encoding format " + encoding);
+    return true;
+  }
+  virtual void Print() const override {
+    Options::Print();
+    std::cerr << "    encoding: " << encoding << std::endl;
+    std::cerr << "    quality: " << quality << std::endl;
+    std::cerr << "    raw: " << raw << std::endl;
+    std::cerr << "    restart: " << restart << std::endl;
+    std::cerr << "    timelapse: " << timelapse.get() << "ms" << std::endl;
+    std::cerr << "    framestart: " << framestart << std::endl;
+    std::cerr << "    datetime: " << datetime << std::endl;
+    std::cerr << "    timestamp: " << timestamp << std::endl;
+    std::cerr << "    keypress: " << keypress << std::endl;
+    std::cerr << "    signal: " << signal << std::endl;
+    std::cerr << "    thumbnail width: " << thumb_width << std::endl;
+    std::cerr << "    thumbnail height: " << thumb_height << std::endl;
+    std::cerr << "    thumbnail quality: " << thumb_quality << std::endl;
+    std::cerr << "    latest: " << latest << std::endl;
+    std::cerr << "    immediate " << immediate << std::endl;
+    std::cerr << "    AF on capture: " << af_on_capture << std::endl;
+    std::cerr << "    Zero shutter lag: " << zsl << std::endl;
+    for (auto &s : exif) std::cerr << "    EXIF: " << s << std::endl;
+  }
 
-private:
-	std::string timelapse_;
+ private:
+  std::string timelapse_;
 };

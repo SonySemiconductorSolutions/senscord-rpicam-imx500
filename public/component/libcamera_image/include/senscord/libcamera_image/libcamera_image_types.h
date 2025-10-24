@@ -21,26 +21,36 @@ constexpr char kLibcameraAccessPropertyKey[] = "LibcameraAccessProperty";
 constexpr char kLibcameraDeviceEnumerationPropertyKey[] =
     "LibcameraDeviceEnumerationProperty";
 constexpr char kLibcameraImageRotationPropertyKey[] = "image_rotation_property";
-constexpr char kLibcameraCameraImageFlipPropertyKey[] = "camera_image_flip_property";
-constexpr char kLibcameraAIModelBundleIdPropertyKey[] = "ai_model_bundle_id_property";
-constexpr char kLibcameraInputDataTypePropertyKey[] = "input_data_type_property";
+constexpr char kLibcameraCameraImageFlipPropertyKey[] =
+    "camera_image_flip_property";
+constexpr char kLibcameraAIModelBundleIdPropertyKey[] =
+    "ai_model_bundle_id_property";
+constexpr char kLibcameraInputDataTypePropertyKey[] =
+    "input_data_type_property";
 constexpr char kLibcameraTensorShapesPropertyKey[] = "tensor_shapes_property";
-constexpr char kLibcameraInfoStringPropertyKey[] = "info_string_property";
+constexpr char kLibcameraInfoStringPropertyKey[]   = "info_string_property";
 constexpr char kPostProcessAvailablePropertyKey[] =
     "post_process_available_property";
-constexpr char kLibcameraCameraExposureModePropertyKey[] = "camera_exposure_mode_property";
-constexpr char kLibcameraCameraAutoExposurePropertyKey[] = "camera_auto_exposure_property";
-constexpr char kLibcameraCameraEvCompensationPropertyKey[] = "camera_ev_compensation_property";
+constexpr char kLibcameraCameraExposureModePropertyKey[] =
+    "camera_exposure_mode_property";
+constexpr char kLibcameraCameraAutoExposurePropertyKey[] =
+    "camera_auto_exposure_property";
+constexpr char kLibcameraCameraEvCompensationPropertyKey[] =
+    "camera_ev_compensation_property";
 constexpr char kLibcameraCameraAntiFlickerModePropertyKey[] =
     "camera_anti_flicker_mode_property";
 constexpr char kLibcameraCameraAutoExposureMeteringPropertykey[] =
     "camera_auto_exposure_metering_property";
-constexpr char kLibcameraCameraManualExposurePropertykey[] = "camera_manual_exposure_property";
+constexpr char kLibcameraCameraManualExposurePropertykey[] =
+    "camera_manual_exposure_property";
 constexpr char kLibcameraTemperaturePropertyKey[] = "temperature_property";
-constexpr char kLibcameraCameraImageSizePropertykey[] = "camera_image_size_property";
-constexpr char kLibcameraCameraFrameRatePropertykey[] = "camera_frame_rate_property";
-constexpr char kLibcameraImageCropPropertyKey[] = "image_crop_property";
-constexpr char kLibcameraCameraImagePropertyKey[] = "camera_image_property";
+constexpr char kLibcameraCameraImageSizePropertykey[] =
+    "camera_image_size_property";
+constexpr char kLibcameraCameraFrameRatePropertykey[] =
+    "camera_frame_rate_property";
+constexpr char kLibcameraImageCropPropertyKey[]    = "image_crop_property";
+constexpr char kLibcameraIspImagePropertyKey[]     = "isp_image_property";
+constexpr char kLibcameraIspFrameRatePropertyKey[] = "isp_frame_rate_property";
 
 /**
  * @brief libcamera access property.
@@ -71,7 +81,7 @@ struct DeviceEnumerationProperty {
   SENSCORD_SERIALIZE_DEFINE(devices)
 };
 
-enum SensorRotationAngle{
+enum SensorRotationAngle {
   SENSOR_ROTATION_ANGLE_0_DEG,
   SENSOR_ROTATION_ANGLE_90_DEG,
   SENSOR_ROTATION_ANGLE_180_DEG,
@@ -233,8 +243,8 @@ struct CameraManualExposureProperty {
  * @brief Property for the temperature information.
  */
 struct TemperatureInfo {
-  float temperature;         /**< Temperature data. */
-  std::string description;   /**< Description of sensor. */
+  float temperature;       /**< Temperature data. */
+  std::string description; /**< Description of sensor. */
 
   SENSCORD_SERIALIZE_DEFINE(temperature, description)
 };
@@ -277,17 +287,27 @@ struct CameraFrameRateProperty {
 };
 
 /**
- * @brief Property CameraImage.
+ * @brief Property IspImage.
  */
 const uint32_t kPixelFormatLength = 64;
-struct CameraImageProperty {
-  uint32_t width;         /**< Image width. */
-  uint32_t height;        /**< Image height. */
-  uint32_t stride_bytes;  /**< Image stride. */
+struct IspImageProperty {
+  uint32_t width;        /**< Image width. */
+  uint32_t height;       /**< Image height. */
+  uint32_t stride_bytes; /**< Image stride. */
   /** The format of a pixel. */
   char pixel_format[kPixelFormatLength];
 
   SENSCORD_SERIALIZE_DEFINE(width, height, stride_bytes, pixel_format)
+};
+
+/**
+ * @brief Property IspFrameRate.
+ */
+struct IspFrameRateProperty {
+  uint32_t num;
+  uint32_t denom;
+
+  SENSCORD_SERIALIZE_DEFINE(num, denom)
 };
 
 }  // namespace libcamera_image
@@ -295,7 +315,8 @@ struct CameraImageProperty {
 
 SENSCORD_SERIALIZE_ADD_ENUM(senscord::libcamera_image::CameraExposureMode)
 SENSCORD_SERIALIZE_ADD_ENUM(senscord::libcamera_image::CameraAntiFlickerMode)
-SENSCORD_SERIALIZE_ADD_ENUM(senscord::libcamera_image::CameraAutoExposureMeteringMode)
+SENSCORD_SERIALIZE_ADD_ENUM(
+    senscord::libcamera_image::CameraAutoExposureMeteringMode)
 SENSCORD_SERIALIZE_ADD_ENUM(senscord::libcamera_image::CameraScalingPolicy)
 
 #endif
