@@ -5,7 +5,9 @@
           "filename": "/home/pi/input_tensor.raw",
           "num_tensors": 10,
           "norm_val": [384, 384, 384, 0],
-          "norm_shift": [0, 0, 0, 0]
+          "norm_shift": [0, 0, 0, 0],
+          "div_val": [1, 1, 1, 1],
+          "div_shift": 0
       }
   }
 }

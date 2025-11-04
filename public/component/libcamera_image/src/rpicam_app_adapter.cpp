@@ -99,8 +99,15 @@ LibcameraAdapter::LibcameraAdapter()
       image_flip_{false, false},
       image_crop_{0, 0, CAMERA_IMAGE_WIDTH_DEFAULT,
                   CAMERA_IMAGE_HEIGHT_DEFAULT},
+      ae_metering_mode_(kAeMeteringFullScreen),
+      ae_metering_window_{0, 0, IMX500_FULL_RESOLUTION_HEIGHT,
+                          IMX500_FULL_RESOLUTION_WIDTH},
       no_image_crop_{true},
-      is_running_(false) {}
+      is_running_(false),
+      is_set_ae_param_(false),
+      is_set_ev_compensation_(false),
+      auto_exposure_{0, 0, 0.0f, 0},
+      ev_compensation_(1.0f) {}
 LibcameraAdapter::~LibcameraAdapter() {}
 
 senscord::Status LibcameraAdapter::Open(
@@ -176,6 +183,11 @@ senscord::Status LibcameraAdapter::Open(
   options_->denoise    = "auto";
   options_->contrast   = 1.0f;
   options_->saturation = 1.0f;
+
+  std::fill(std::begin(norm_val_),   std::end(norm_val_),   int32_t{0});
+  std::fill(std::begin(norm_shift_), std::end(norm_shift_), uint32_t{0});
+  std::fill(std::begin(div_val_),    std::end(div_val_),    int32_t{1});
+  div_shift_ = 0;
 
   // Parse the JSON file
   std::string j_str = ReadPostProcessJsonString(options_->post_process_file);
@@ -782,6 +794,9 @@ void LibcameraAdapter::GetFrames(std::vector<senscord::FrameInfo> *frames,
         notified to higher layers.
       */
       UpdateImageRotationProperty();
+      UpdateAeMetering();
+      UpdateAutoExposureParam();
+      UpdateEvCompensation();
     }
     if (count_drop_frames_ > MAX_NUM_DROP_FRAMES) {
       payload = std::get<CompletedRequestPtr>(msg.payload);
@@ -1273,13 +1288,72 @@ senscord::Status LibcameraAdapter::SetExposureMode(ExposureModeParam mode) {
 senscord::Status LibcameraAdapter::SetAutoExposureParam(
     uint32_t &max_exposure_time, uint32_t &min_exposure_time, float &max_gain,
     uint32_t &convergence_speed) {
-  /* There is no interface for configuring it in libcamera. */
-  return SENSCORD_STATUS_FAIL("libcamera", senscord::Status::kCauseNotSupported,
-                              "The AutoExposure parameter is not supported.");
+  auto_exposure_.max_exposure_time = max_exposure_time;
+  auto_exposure_.min_exposure_time = min_exposure_time;
+  auto_exposure_.max_gain          = max_gain;
+  auto_exposure_.convergence_speed = convergence_speed;
+
+  is_set_ae_param_ = true;
+
+  if (reg_handle_.IsEnableAccess()) {
+    if (!UpdateAutoExposureParam()) {
+      return SENSCORD_STATUS_FAIL("libcamera",
+                                  senscord::Status::kCauseNotSupported,
+                                  "Failed to update AutoExposureParam.");
+    }
+  }
+
+  return senscord::Status::OK();
+}
+
+senscord::Status LibcameraAdapter::GetAutoExposureParam(
+    uint32_t &max_exposure_time, uint32_t &min_exposure_time, float &max_gain,
+    uint32_t &convergence_speed) {
+  if (!reg_handle_.IsEnableAccess()) {
+    return SENSCORD_STATUS_FAIL("libcamera",
+                                senscord::Status::kCauseHardwareError,
+                                "I2C is still not accessible.");
+  }
+
+  if (!ReadAutoExposureParam(max_exposure_time, min_exposure_time, max_gain,
+                             convergence_speed)) {
+    return SENSCORD_STATUS_FAIL("libcamera",
+                                senscord::Status::kCauseNotSupported,
+                                "Failed to get AutoExposureParam.");
+  }
+
+  return senscord::Status::OK();
 }
 
 senscord::Status LibcameraAdapter::SetAeEvCompensation(float &ev_compensation) {
-  options_->ev = ev_compensation;
+  ev_compensation_ = ev_compensation;
+
+  is_set_ev_compensation_ = true;
+
+  if (reg_handle_.IsEnableAccess()) {
+    if (!UpdateEvCompensation()) {
+      return SENSCORD_STATUS_FAIL("libcamera",
+                                  senscord::Status::kCauseNotSupported,
+                                  "Failed to update EvCompensation.");
+    }
+  }
+
+  return senscord::Status::OK();
+}
+
+senscord::Status LibcameraAdapter::GetAeEvCompensation(float &ev_compensation) {
+  if (!reg_handle_.IsEnableAccess()) {
+    return SENSCORD_STATUS_FAIL("libcamera",
+                                senscord::Status::kCauseHardwareError,
+                                "I2C is still not accessible.");
+  }
+
+  if (!ReadEvCompensation(ev_compensation)) {
+    return SENSCORD_STATUS_FAIL("libcamera",
+                                senscord::Status::kCauseNotSupported,
+                                "Failed to get EvCompensation.");
+  }
+
   return senscord::Status::OK();
 }
 
@@ -1311,9 +1385,27 @@ senscord::Status LibcameraAdapter::SetAeAntiFlickerMode(
 
 senscord::Status LibcameraAdapter::SetAeMetering(AeMeteringMode mode,
                                                  AeMeteringWindow &window) {
-  /* There is no interface for configuring it in libcamera. */
-  return SENSCORD_STATUS_FAIL("libcamera", senscord::Status::kCauseNotSupported,
-                              "The AeMetering parameter is not supported.");
+  switch (mode) {
+    case kAeMeteringFullScreen:
+    case kAeMeteringUserWindow:
+      ae_metering_mode_   = mode;
+      ae_metering_window_ = window;
+      break;
+    default:
+      return SENSCORD_STATUS_FAIL("libcamera",
+                                  senscord::Status::kCauseNotSupported,
+                                  "mode(%d) is not supported.", mode);
+  }
+
+  if (reg_handle_.IsEnableAccess()) {
+    if (!UpdateAeMetering()) {
+      return SENSCORD_STATUS_FAIL("libcamera",
+                                  senscord::Status::kCauseHardwareError,
+                                  "Failed to update AeMetering.");
+    }
+  }
+
+  return senscord::Status::OK();
 }
 
 senscord::Status LibcameraAdapter::SetManualExposureParam(
@@ -2156,12 +2248,12 @@ bool LibcameraAdapter::GetDeviceID(std::string &device_id_str) {
   return true;
 }
 
-uint32_t LibcameraAdapter::ConvertCropHorizontalToSensor(uint32_t target) {
+uint32_t LibcameraAdapter::ConvertHorizontalToSensor(uint32_t target) {
   return (uint32_t)((target * IMX500_FULL_RESOLUTION_WIDTH) /
                     camera_image_size_width_);
 }
 
-uint32_t LibcameraAdapter::ConvertCropVerticalToSensor(uint32_t target) {
+uint32_t LibcameraAdapter::ConvertVerticalToSensor(uint32_t target) {
   return (uint32_t)((target * IMX500_FULL_RESOLUTION_HEIGHT) /
                     camera_image_size_height_);
 }
@@ -2229,10 +2321,10 @@ bool LibcameraAdapter::UpdateImageCrop(void) {
     return false;
   }
 
-  const uint32_t crop_param[4] = {ConvertCropHorizontalToSensor(image_crop_.x),
-                                  ConvertCropVerticalToSensor(image_crop_.y),
-                                  ConvertCropHorizontalToSensor(image_crop_.w),
-                                  ConvertCropVerticalToSensor(image_crop_.h)};
+  const uint32_t crop_param[4] = {ConvertHorizontalToSensor(image_crop_.x),
+                                  ConvertVerticalToSensor(image_crop_.y),
+                                  ConvertHorizontalToSensor(image_crop_.w),
+                                  ConvertVerticalToSensor(image_crop_.h)};
   const uint32_t inference_window_id = INFERENCE_WINDOW_ID;
 
   if (!v4l2_manager.SetExtControl(inference_window_id, (void *)crop_param,
@@ -2275,6 +2367,654 @@ void LibcameraAdapter::UpdateImageRotationProperty(void) {
     SENSCORD_LOG_ERROR_TAGGED("libcamera",
                               "Failed to write image rotate register");
   }
+}
+
+bool LibcameraAdapter::ConvertWindowToSensor(uint16_t *top, uint16_t *left,
+                                             uint16_t *width,
+                                             uint16_t *height) {
+  if (!top || !left || !width || !height) {
+    return false;
+  }
+
+  uint16_t converted_top  = ConvertVerticalToSensor(ae_metering_window_.top);
+  uint16_t converted_left = ConvertHorizontalToSensor(ae_metering_window_.left);
+  uint16_t converted_bottom =
+      ConvertVerticalToSensor(ae_metering_window_.bottom);
+  uint16_t converted_right =
+      ConvertHorizontalToSensor(ae_metering_window_.right);
+
+  if (converted_top >= converted_bottom) {
+    return false;
+  }
+
+  if (converted_left >= converted_right) {
+    return false;
+  }
+
+  uint16_t calculated_width  = converted_right - converted_left;
+  uint16_t calculated_height = converted_bottom - converted_top;
+
+  if ((calculated_width == 0) || (calculated_height == 0)) {
+    return false;
+  }
+
+  if (calculated_width > IMX500_FULL_RESOLUTION_WIDTH) {
+    return false;
+  }
+
+  if (calculated_height > IMX500_FULL_RESOLUTION_HEIGHT) {
+    return false;
+  }
+
+  *top    = converted_top;
+  *left   = converted_left;
+  *width  = calculated_width;
+  *height = calculated_height;
+
+  return true;
+}
+
+bool LibcameraAdapter::SetAeMeteringMode(AeMeteringMode mode) {
+  senscord::Status status;
+  uint8_t reg_mode = 0, reg_ratio = 0;
+
+  if (mode == kAeMeteringFullScreen) {
+    reg_mode  = kAeMeteringModeFullScreen;
+    reg_ratio = kAeMeteringRatioFullScreen;
+  } else if (mode == kAeMeteringUserWindow) {
+    reg_mode  = kAeMeteringModeUserWindow;
+    reg_ratio = kAeMeteringRatioUserWindow;
+  } else {
+    return false;
+  }
+
+  status = reg_handle_.WriteRegister(kRegAeMeteringMode, &reg_mode);
+  if (!status.ok()) {
+    return false;
+  }
+
+  status = reg_handle_.WriteRegister(kRegAeMeteringRatio, &reg_ratio);
+  if (!status.ok()) {
+    return false;
+  }
+
+  return true;
+}
+
+bool LibcameraAdapter::SetAeMeteringFullScreen(void) {
+  senscord::Status status;
+  uint16_t reg_value;
+
+  reg_value = kAeOpdWidthType1Max;
+  status    = reg_handle_.WriteRegister(
+      kRegAeOpdWidthType1, (uint8_t *)(&reg_value), sizeof(reg_value));
+  if (!status.ok()) {
+    return false;
+  }
+
+  reg_value = kAeOpdHeightType1Max;
+  status    = reg_handle_.WriteRegister(
+      kRegAeOpdHeightType1, (uint8_t *)(&reg_value), sizeof(reg_value));
+  if (!status.ok()) {
+    return false;
+  }
+
+  return true;
+}
+
+bool LibcameraAdapter::SetAeMeteringUserWindow(uint16_t top, uint16_t left,
+                                               uint16_t width,
+                                               uint16_t height) {
+  senscord::Status status;
+  uint16_t evref_type1;
+
+  status = reg_handle_.ReadRegister(kRegEvrefType1, (uint8_t *)(&evref_type1),
+                                    sizeof(evref_type1));
+  if (!status.ok()) {
+    return false;
+  }
+
+  status = reg_handle_.WriteRegister(
+      kRegAeEvrefFreeMode, (uint8_t *)(&evref_type1), sizeof(evref_type1));
+  if (!status.ok()) {
+    return false;
+  }
+
+  status = reg_handle_.WriteRegister(kRegOpdAeArbVOffset, (uint8_t *)(&top),
+                                     sizeof(top));
+  if (!status.ok()) {
+    return false;
+  }
+
+  status = reg_handle_.WriteRegister(kRegOpdAeArbHOffset, (uint8_t *)(&left),
+                                     sizeof(left));
+  if (!status.ok()) {
+    return false;
+  }
+
+  status = reg_handle_.WriteRegister(kRegOpdAeArbVValid, (uint8_t *)(&height),
+                                     sizeof(height));
+  if (!status.ok()) {
+    return false;
+  }
+
+  status = reg_handle_.WriteRegister(kRegOpdAeArbHValid, (uint8_t *)(&width),
+                                     sizeof(width));
+  if (!status.ok()) {
+    return false;
+  }
+
+  return true;
+}
+
+bool LibcameraAdapter::UpdateAeMetering(void) {
+  senscord::Status status;
+  uint8_t pre_mode;
+
+  SENSCORD_LOG_DEBUG_TAGGED("libcamera", "AE Metering parameters");
+  SENSCORD_LOG_DEBUG_TAGGED("libcamera", "  Mode: 0x%x", ae_metering_mode_);
+  SENSCORD_LOG_DEBUG_TAGGED("libcamera", "  Window: [%d, %d, %d, %d]",
+                            ae_metering_window_.top, ae_metering_window_.left,
+                            ae_metering_window_.bottom,
+                            ae_metering_window_.right);
+
+  status = reg_handle_.ReadRegister(kRegAeMeteringMode, &pre_mode);
+  if (!status.ok()) {
+    SENSCORD_LOG_ERROR_TAGGED("libcamera", "Failed to read pre-mode.");
+    return false;
+  }
+
+  if (!SetAeMeteringMode(ae_metering_mode_)) {
+    SENSCORD_LOG_ERROR_TAGGED("libcamera", "Failed to set ae metering mode.");
+    return false;
+  }
+
+  if (ae_metering_mode_ == kAeMeteringFullScreen) {
+    if (!SetAeMeteringFullScreen()) {
+      SENSCORD_LOG_ERROR_TAGGED("libcamera",
+                                "Failed to set ae metering full-screen size.");
+      return false;
+    }
+
+  } else if (ae_metering_mode_ == kAeMeteringUserWindow) {
+    uint16_t top, left, width, height;
+    if (!ConvertWindowToSensor(&top, &left, &width, &height)) {
+      SENSCORD_LOG_ERROR_TAGGED("libcamera",
+                                "Failed to convert to sensor coordinate.");
+
+      AeMeteringMode mode_tmp = (pre_mode == kAeMeteringModeFullScreen)
+                                    ? kAeMeteringFullScreen
+                                    : kAeMeteringUserWindow;
+      (void)SetAeMeteringMode(mode_tmp);
+      return false;
+    }
+
+    if (!SetAeMeteringUserWindow(top, left, width, height)) {
+      SENSCORD_LOG_ERROR_TAGGED("libcamera",
+                                "Failed to set ae metering user-window size.");
+      return false;
+    }
+  }
+
+  return true;
+}
+
+bool LibcameraAdapter::SetMaxExposureTime(void) {
+  senscord::Status status;
+  uint16_t aeline_maxsht_limit_type1 = 0;
+
+  uint32_t converted_max_exposure_time = auto_exposure_.max_exposure_time / 100;
+  if (converted_max_exposure_time > 0xFFFF) {
+    aeline_maxsht_limit_type1 = 0xFFFF;
+    auto_exposure_.max_exposure_time =
+        (uint32_t)(aeline_maxsht_limit_type1 * 100);
+  } else {
+    aeline_maxsht_limit_type1 = (uint16_t)converted_max_exposure_time;
+  }
+
+  uint8_t aeline_limit_f_type1 = 0x01;
+  status = reg_handle_.WriteRegister(kRegAelineLimitFType1,
+                                     (uint8_t *)(&aeline_limit_f_type1),
+                                     sizeof(aeline_limit_f_type1));
+  if (!status.ok()) {
+    return false;
+  }
+
+  status = reg_handle_.WriteRegister(kRegAelineMaxshtLimitType1,
+                                     (uint8_t *)(&aeline_maxsht_limit_type1),
+                                     sizeof(aeline_maxsht_limit_type1));
+  if (!status.ok()) {
+    return false;
+  }
+
+  uint8_t shtctrltime1_type1 = 200;
+  status                     = reg_handle_.WriteRegister(kRegShtctrltime1Type1,
+                                                         (uint8_t *)(&shtctrltime1_type1),
+                                                         sizeof(shtctrltime1_type1));
+  if (!status.ok()) {
+    return false;
+  }
+
+  uint8_t shtctrlmag1 = 10;
+  status = reg_handle_.WriteRegister(kRegShtctrlmag1, (uint8_t *)(&shtctrlmag1),
+                                     sizeof(shtctrlmag1));
+  if (!status.ok()) {
+    return false;
+  }
+
+  return true;
+}
+
+bool LibcameraAdapter::GetTimePerH(uint32_t &time_per_h) {
+  senscord::Status status;
+
+  uint8_t ivt_prepllck_div;
+  uint16_t ivt_pll_mpy;
+  uint8_t ivt_syck_div;
+  uint8_t ivt_pxck_div;
+
+  status = reg_handle_.ReadRegister(kRegIvtPrepllckDiv,
+                                    (uint8_t *)(&ivt_prepllck_div));
+  if (!status.ok()) {
+    return false;
+  }
+
+  status = reg_handle_.ReadRegister(kRegIvtpllMpy, (uint8_t *)(&ivt_pll_mpy),
+                                    sizeof(ivt_pll_mpy));
+  if (!status.ok()) {
+    return false;
+  }
+
+  status = reg_handle_.ReadRegister(kRegIvtSyckDiv, (uint8_t *)(&ivt_syck_div));
+  if (!status.ok()) {
+    return false;
+  }
+
+  status = reg_handle_.ReadRegister(kRegIvtPxckDiv, (uint8_t *)(&ivt_pxck_div));
+  if (!status.ok()) {
+    return false;
+  }
+
+  if ((ivt_prepllck_div == 0) || (ivt_pll_mpy == 0) || (ivt_syck_div == 0) ||
+      (ivt_pxck_div == 0)) {
+    return false;
+  }
+
+  uint64_t ivt_pxck = SENSOR_INCK_FREQ;
+  ivt_pxck = ivt_pxck / (uint64_t)ivt_prepllck_div * (uint64_t)ivt_pll_mpy;
+  ivt_pxck = ivt_pxck / ((uint64_t)ivt_syck_div * (uint64_t)ivt_pxck_div);
+
+  uint16_t line_length_pck;
+  status =
+      reg_handle_.ReadRegister(kRegLineLengthPck, (uint8_t *)(&line_length_pck),
+                               sizeof(line_length_pck));
+  if (!status.ok()) {
+    return false;
+  }
+
+  uint64_t v, t;
+  v = line_length_pck;
+  v = v * 1000000;
+  t = ivt_pxck / 1000;
+  if (t == 0) {
+    return false;
+  }
+  v = (v / t) / 4;
+
+  time_per_h = (uint32_t)v;
+
+  return true;
+}
+
+bool LibcameraAdapter::SetMinExposureTime(void) {
+  senscord::Status status;
+
+  if (auto_exposure_.max_exposure_time < auto_exposure_.min_exposure_time) {
+    auto_exposure_.min_exposure_time = auto_exposure_.max_exposure_time;
+  }
+
+  uint32_t time_per_h;
+  if (!GetTimePerH(time_per_h)) {
+    return false;
+  }
+
+  uint8_t shtminline;
+  double value = ((double)(auto_exposure_.min_exposure_time) * 1000.f) /
+                 (double)time_per_h;
+  if (value > 0xFF) {
+    shtminline = 0xFF;
+  } else {
+    shtminline = (uint8_t)value;
+  }
+
+  status = reg_handle_.WriteRegister(kRegShtminline, (uint8_t *)(&shtminline));
+  if (!status.ok()) {
+    return false;
+  }
+
+  return true;
+}
+
+bool LibcameraAdapter::SetMaxGain(void) {
+  senscord::Status status;
+
+  uint8_t agcgain1_type1;
+  double value = (double)auto_exposure_.max_gain / 0.3;
+  if (value < 0.f) {
+    agcgain1_type1 = 0;
+  } else if (value > 0xFF) {
+    agcgain1_type1 = 0xFF;
+  } else {
+    agcgain1_type1 = (uint8_t)value;
+  }
+
+  status = reg_handle_.WriteRegister(kRegAgcgain1Type1,
+                                     (uint8_t *)(&agcgain1_type1));
+  if (!status.ok()) {
+    return false;
+  }
+
+  return true;
+}
+
+bool LibcameraAdapter::SetConvergenceSpeed(void) {
+  senscord::Status status;
+
+  uint16_t errscllmit;
+  uint32_t value = 0x0400 / auto_exposure_.convergence_speed;
+  if (value < 0x0001) {
+    errscllmit = 0x0001;
+  } else if (value > 0x7FFF) {
+    errscllmit = 0x7FFF;
+  } else {
+    errscllmit = (uint16_t)value;
+  }
+
+  uint8_t ae_speed = 0x0A;
+  status = reg_handle_.WriteRegister(kRegAespeedMoni, (uint8_t *)(&ae_speed));
+  if (!status.ok()) {
+    return false;
+  }
+
+  status = reg_handle_.WriteRegister(kRegErrscllmit, (uint8_t *)(&errscllmit),
+                                     sizeof(errscllmit));
+  if (!status.ok()) {
+    return false;
+  }
+
+  return true;
+}
+
+bool LibcameraAdapter::UpdateAutoExposureParam(void) {
+  if (options_->exposure_index != 0) {
+    SENSCORD_LOG_WARNING_TAGGED(
+        "libcamera", "Since it is not in Auto mode, skipped the settings.");
+    return true;
+  }
+
+  if (!is_set_ae_param_) {
+    SENSCORD_LOG_WARNING_TAGGED("libcamera", "AutoExposureParam is not set.");
+    return false;
+  }
+
+  if (!isfinite(auto_exposure_.max_gain)) {
+    SENSCORD_LOG_WARNING_TAGGED("libcamera", "AutoExposure max_gain is INFINITY.");
+    return false;
+  }
+
+  if (!SetMaxExposureTime()) {
+    SENSCORD_LOG_ERROR_TAGGED("libcamera", "Failed to set max_exposure_time.");
+    return false;
+  }
+
+  if (!SetMinExposureTime()) {
+    SENSCORD_LOG_ERROR_TAGGED("libcamera", "Failed to set min_exposure_time.");
+    return false;
+  }
+
+  if (!SetMaxGain()) {
+    SENSCORD_LOG_ERROR_TAGGED("libcamera", "Failed to set max_gain.");
+    return false;
+  }
+
+  if (!SetConvergenceSpeed()) {
+    SENSCORD_LOG_ERROR_TAGGED("libcamera", "Failed to set convergence_speed.");
+    return false;
+  }
+
+  return true;
+}
+
+bool LibcameraAdapter::GetMaxExposureTime(uint32_t &max_exposure_time) {
+  senscord::Status status;
+
+  uint16_t aeline_maxsht_limit_type1;
+  status = reg_handle_.ReadRegister(kRegAelineMaxshtLimitType1,
+                                    (uint8_t *)(&aeline_maxsht_limit_type1),
+                                    sizeof(aeline_maxsht_limit_type1));
+  if (!status.ok()) {
+    return false;
+  }
+
+  max_exposure_time = aeline_maxsht_limit_type1 * 100;
+
+  return true;
+}
+
+bool LibcameraAdapter::GetMinExposureTime(uint32_t &min_exposure_time) {
+  senscord::Status status;
+
+  uint8_t shtminline;
+  status = reg_handle_.ReadRegister(kRegShtminline, (uint8_t *)(&shtminline),
+                                    sizeof(shtminline));
+  if (!status.ok()) {
+    return false;
+  }
+
+  uint32_t time_per_h;
+  if (!GetTimePerH(time_per_h)) {
+    return false;
+  }
+
+  if (time_per_h == 0) {
+    return false;
+  }
+
+  min_exposure_time = shtminline * time_per_h / 1000;
+
+  return true;
+}
+
+bool LibcameraAdapter::GetMaxGain(float &max_gain) {
+  senscord::Status status;
+
+  uint8_t agcgain1_type1;
+  status = reg_handle_.ReadRegister(
+      kRegAgcgain1Type1, (uint8_t *)(&agcgain1_type1), sizeof(agcgain1_type1));
+  if (!status.ok()) {
+    return false;
+  }
+
+  max_gain = (float)agcgain1_type1 * 0.3f;
+
+  return true;
+}
+
+bool LibcameraAdapter::GetConvergenceSpeed(uint32_t &convergence_speed) {
+  senscord::Status status;
+
+  uint16_t errscllmit;
+  status = reg_handle_.ReadRegister(kRegErrscllmit, (uint8_t *)(&errscllmit),
+                                    sizeof(errscllmit));
+  if (!status.ok()) {
+    return false;
+  }
+
+  convergence_speed = (uint32_t)(0x0400 / errscllmit);
+
+  return true;
+}
+
+bool LibcameraAdapter::ReadAutoExposureParam(uint32_t &max_exposure_time,
+                                             uint32_t &min_exposure_time,
+                                             float &max_gain,
+                                             uint32_t &convergence_speed) {
+  if (!GetMaxExposureTime(max_exposure_time)) {
+    SENSCORD_LOG_ERROR_TAGGED("libcamera", "Failed to get max_exposure_time.");
+    return false;
+  }
+
+  if (!GetMinExposureTime(min_exposure_time)) {
+    SENSCORD_LOG_ERROR_TAGGED("libcamera", "Failed to get min_exposure_time.");
+    return false;
+  }
+
+  if (!GetMaxGain(max_gain)) {
+    SENSCORD_LOG_ERROR_TAGGED("libcamera", "Failed to get max_gain.");
+    return false;
+  }
+
+  if (!GetConvergenceSpeed(convergence_speed)) {
+    SENSCORD_LOG_ERROR_TAGGED("libcamera", "Failed to get convergence_speed.");
+    return false;
+  }
+
+  return true;
+}
+
+bool LibcameraAdapter::SetEvCompensation(int8_t correct_index,
+                                         const std::vector<uint8_t> *p_gain,
+                                         const std::vector<uint8_t> *m_gain) {
+  senscord::Status status;
+
+  const int8_t correct_range_diff = 6;
+  int8_t correct_index_tmp        = correct_index;
+
+  if (correct_index_tmp > correct_range_diff) {
+    correct_index_tmp = correct_range_diff;
+  }
+
+  if (correct_index_tmp < -correct_range_diff) {
+    correct_index_tmp = -correct_range_diff;
+  }
+
+  status =
+      reg_handle_.WriteRegister(kRegEvsel, (uint8_t *)(&correct_index_tmp));
+  if (!status.ok()) {
+    return false;
+  }
+
+  for (int8_t i = 0; i < kImx500IspEvGainNum; i++) {
+    if (p_gain && (i < static_cast<int8_t>(p_gain->size()))) {
+      uint16_t addr = kRegEvselGainP13 + i;
+      uint8_t value = (*p_gain)[i];
+      status        = reg_handle_.WriteRegister(addr, &value);
+      if (!status.ok()) {
+        return false;
+      }
+    }
+
+    if (m_gain && (i < static_cast<int8_t>(m_gain->size()))) {
+      uint16_t addr = kRegEvselGainM13 + i;
+      uint8_t value = (*m_gain)[i];
+      status        = reg_handle_.WriteRegister(addr, &value);
+      if (!status.ok()) {
+        return false;
+      }
+    }
+  }
+
+  return true;
+}
+
+bool LibcameraAdapter::SetPresetEvCompensation(void) {
+  senscord::Status status;
+
+  int8_t ev_index                    = 0;
+  std::vector<uint8_t> ev_gain_array = {0x05, 0x0A, 0x0F, 0x14, 0x19, 0x1E};
+
+  status = reg_handle_.WriteRegister(kRegEvsel, (uint8_t *)(&ev_index));
+  if (!status.ok()) {
+    return false;
+  }
+
+  if (!SetEvCompensation(ev_index, &ev_gain_array, &ev_gain_array)) {
+    return false;
+  }
+
+  return true;
+}
+
+bool LibcameraAdapter::UpdateEvCompensation(void) {
+  if (options_->exposure_index != 0) {
+    SENSCORD_LOG_WARNING_TAGGED(
+        "libcamera", "Since it is not in Auto mode, skipped the settings.");
+    return true;
+  }
+
+  if (!is_set_ev_compensation_) {
+    SENSCORD_LOG_WARNING_TAGGED("libcamera", "EvCompensation is not set.");
+    return false;
+  }
+
+  if (!isfinite(ev_compensation_)) {
+    SENSCORD_LOG_WARNING_TAGGED("libcamera", "EvCompensation is INFINITY.");
+    return false;
+  }
+
+  int8_t ev_index             = 0;
+  std::vector<float> ev_array = {0.0f, 0.25f, 0.5f, 0.75f, 1.0f, 1.25f, 1.5f};
+
+  for (int8_t i = (int8_t)(ev_array.size() - 1); i > 0; --i) {
+    if (std::isgreaterequal(ev_array[i], fabsf(ev_compensation_))) {
+      ev_index = i;
+      break;
+    }
+  }
+
+  if (signbit(ev_compensation_)) {
+    ev_index *= -1;
+  }
+
+  if (!SetEvCompensation(ev_index, nullptr, nullptr)) {
+    SENSCORD_LOG_WARNING_TAGGED("libcamera", "Failed to set ev_compensation.");
+
+    if (!SetPresetEvCompensation()) {
+      SENSCORD_LOG_ERROR_TAGGED("libcamera",
+                                "Failed to set preset ev_compensation.");
+      return false;
+    }
+  }
+
+  return true;
+}
+
+bool LibcameraAdapter::ReadEvCompensation(float &ev_compensation) {
+  senscord::Status status;
+
+  int8_t ev_index;
+  status = reg_handle_.ReadRegister(kRegEvsel, (uint8_t *)(&ev_index));
+  if (!status.ok()) {
+    SENSCORD_LOG_ERROR_TAGGED("libcamera",
+                              "Failed to get ev_compensation index.");
+    return false;
+  }
+
+  const int8_t correct_range_diff = 6;
+  int32_t ev_index_abs            = abs((int32_t)ev_index);
+  if (ev_index_abs > correct_range_diff) {
+    SENSCORD_LOG_ERROR_TAGGED(
+        "libcamera", "The retrieved ev_compensation index is out of range.");
+    return false;
+  }
+
+  std::vector<float> ev_array = {0.0f, 0.25f, 0.5f, 0.75f, 1.0f, 1.25f, 1.5f};
+  ev_compensation             = ev_array[ev_index_abs];
+  if (signbit(ev_index)) {
+    ev_compensation *= -1;
+  }
+
+  return true;
 }
 
 }  // namespace libcamera_image
