@@ -33,6 +33,58 @@ enum SensorRegRotationAngle {
   SENSOR_REG_ROTATION_NONE
 };
 
+/* AeMetering */
+const uint16_t kRegAeMeteringMode  = 0xD228U;      // AE Metering Mode Register
+const uint16_t kRegAeMeteringRatio = 0xD229U;      // AE Metering Ratio Register
+const uint8_t kAeMeteringModeFullScreen  = 0x00U;  // Full Screen Metering Mode
+const uint8_t kAeMeteringRatioFullScreen = 0x00U;  // Full Screen Metering Ratio
+const uint8_t kAeMeteringModeUserWindow  = 0x01U;  // User Window Metering Mode
+const uint8_t kAeMeteringRatioUserWindow = 0xFFU;  // User Window Metering Ratio
+
+const uint16_t kRegEvrefType1 = 0xD260U;  // EV Reference Type1 Register
+const uint16_t kRegAeEvrefFreeMode =
+    0xD22AU;  // AE EV Reference Free Mode Register
+const uint16_t kRegAeOpdWidthType1  = 0xD24CU;  // AE OPD Width Type1 Register
+const uint16_t kRegAeOpdHeightType1 = 0xD24EU;  // AE OPD Height Type1 Register
+const uint16_t kRegOpdAeArbVOffset =
+    0xE65CU;  // OPD AE Arbitration V Offset Register
+const uint16_t kRegOpdAeArbHOffset =
+    0xE65EU;  // OPD AE Arbitration H Offset Register
+const uint16_t kRegOpdAeArbVValid =
+    0xE660U;  // OPD AE Arbitration V Valid Register
+const uint16_t kRegOpdAeArbHValid =
+    0xE662U;  // OPD AE Arbitration H Valid Register
+const uint16_t kAeOpdWidthType1Max  = 450;  // Maximum AE OPD Width Type1 Value
+const uint16_t kAeOpdHeightType1Max = 434;  // Maximum AE OPD Height Type1 Value
+
+/* AE Parameter */
+const uint16_t kRegAelineLimitFType1 =
+    0xD2B2U;  // AE Line Limit F Type1 Register
+const uint16_t kRegAelineMaxshtLimitType1 =
+    0xD2B4U;  // AE Line Max Shutter Limit Type1 Register
+const uint16_t kRegShtctrltime1Type1 =
+    0xD26DU;  // Shutter Control Time1 Type1 Register
+const uint16_t kRegShtctrlmag1 =
+    0xD984U;  // Shutter Control Magnitude1 Register
+const uint16_t kRegIvtPrepllckDiv =
+    0x0305U;                              // IVT Pre PLL Clock Divider Register
+const uint16_t kRegIvtpllMpy  = 0x0306U;  // IVT PLL Multiplier Register
+const uint16_t kRegIvtSyckDiv = 0x0303U;  // IVT System Clock Divider Register
+const uint16_t kRegIvtPxckDiv = 0x0301U;  // IVT Pixel Clock Divider Register
+const uint16_t kRegLineLengthPck = 0x0342U;  // Line Length PCK Register
+const uint16_t kRegShtminline    = 0xE600U;  // Shutter Minimum Line Register
+const uint16_t kRegAgcgain1Type1 = 0xD26EU;  // AGC Gain1 Type1 Register
+const uint16_t kRegAespeedMoni   = 0xD2D8U;  // AE Speed Monitor Register
+const uint16_t kRegErrscllmit    = 0xD9B2U;  // Error Scale Limit Register
+
+/* Ev Compensation */
+const uint16_t kRegEvsel = 0xD227U;  // EV Selection Register
+const uint16_t kRegEvselGainP13 =
+    0xD9EEU;  // EV Selection Gain Plus 13 Register
+const uint16_t kRegEvselGainM13 =
+    0xD9F4U;                           // EV Selection Gain Minus 13 Register
+const int8_t kImx500IspEvGainNum = 6;  // IMX500 ISP EV Gain Number
+
 /**
  * @brief The image sensor register control class.
  */

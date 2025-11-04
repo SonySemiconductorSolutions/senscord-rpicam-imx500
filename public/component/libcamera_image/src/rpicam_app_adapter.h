@@ -33,6 +33,7 @@
 #define CAMERA_FRAME_RATE_DENOM_DEFAULT                 (1.001f)
 #define MODEL_ID_CONVERTER_VERSION_IT_ONLY              ("000000")
 #define MODEL_ID_VERSION_NUMBER_IT_ONLY                 ("0000")
+#define SENSOR_INCK_FREQ                                (27000000)
 
 namespace libcamera {
 class CameraManager;
@@ -111,15 +112,10 @@ struct AeMeteringWindow {
 };
 
 struct AutoExposureParam {
-  ExposureModeParam mode;
   uint32_t max_exposure_time;
   uint32_t min_exposure_time;
   float max_gain;
   uint32_t convergence_speed;
-  float ev_compensation;
-  AeAntiFlickerMode anti_flicker_mode;
-  AeMeteringMode metering_mode;
-  AeMeteringWindow window;
 };
 
 struct ManualExposureParam {
@@ -203,7 +199,12 @@ class LibcameraAdapter {
                                         uint32_t &min_exposure_time,
                                         float &max_gain,
                                         uint32_t &convergence_speed);
+  senscord::Status GetAutoExposureParam(uint32_t &max_exposure_time,
+                                        uint32_t &min_exposure_time,
+                                        float &max_gain,
+                                        uint32_t &convergence_speed);
   senscord::Status SetAeEvCompensation(float &ev_compensation);
+  senscord::Status GetAeEvCompensation(float &ev_compensation);
   senscord::Status SetAeAntiFlickerMode(AeAntiFlickerMode mode);
   senscord::Status SetAeMetering(AeMeteringMode mode, AeMeteringWindow &window);
   senscord::Status SetManualExposureParam(uint32_t exposure_time, float gain);
@@ -260,13 +261,39 @@ class LibcameraAdapter {
   bool CheckRpkExist(const std::string &post_process_file);
   bool ReadInputTensorSizeFromRpkFile(const uint8_t *data, size_t size);
   bool ReadInputTensorSize(const std::string &post_process_file);
-  uint32_t ConvertCropHorizontalToSensor(uint32_t target);
-  uint32_t ConvertCropVerticalToSensor(uint32_t target);
+  uint32_t ConvertHorizontalToSensor(uint32_t target);
+  uint32_t ConvertVerticalToSensor(uint32_t target);
   bool IsNoCrop(uint32_t crop_left, uint32_t crop_top, uint32_t crop_width,
                 uint32_t crop_height);
   bool IsValidCropRange(uint32_t crop_left, uint32_t crop_top,
                         uint32_t crop_width, uint32_t crop_height);
   bool UpdateImageCrop(void);
+  bool ConvertWindowToSensor(uint16_t *top, uint16_t *left, uint16_t *width,
+                             uint16_t *height);
+  bool SetAeMeteringMode(AeMeteringMode mode);
+  bool SetAeMeteringFullScreen(void);
+  bool SetAeMeteringUserWindow(uint16_t top, uint16_t left, uint16_t width,
+                               uint16_t height);
+  bool UpdateAeMetering(void);
+  bool SetMaxExposureTime(void);
+  bool GetTimePerH(uint32_t &time_per_h);
+  bool SetMinExposureTime(void);
+  bool SetMaxGain(void);
+  bool SetConvergenceSpeed(void);
+  bool UpdateAutoExposureParam(void);
+  bool GetMaxExposureTime(uint32_t &max_exposure_time);
+  bool GetMinExposureTime(uint32_t &min_exposure_time);
+  bool GetMaxGain(float &max_gain);
+  bool GetConvergenceSpeed(uint32_t &convergence_speed);
+  bool ReadAutoExposureParam(uint32_t &max_exposure_time,
+                             uint32_t &min_exposure_time, float &max_gain,
+                             uint32_t &convergence_speed);
+  bool SetEvCompensation(int8_t correct_index,
+                         const std::vector<uint8_t> *p_gain,
+                         const std::vector<uint8_t> *m_gain);
+  bool SetPresetEvCompensation(void);
+  bool UpdateEvCompensation(void);
+  bool ReadEvCompensation(float &ev_compensation);
 
  private:
   static const uint8_t kImx500SensorId = 0;  // IMX500 sensor celsius
@@ -304,6 +331,7 @@ class LibcameraAdapter {
   std::string ai_model_bundle_id_;
   int32_t count_drop_frames_;
   ExposureModeParam exposure_mode_;
+  AutoExposureParam auto_exposure_;
   ManualExposureParam manual_exposure_;
   senscord::libcamera_image::SensorRegister reg_handle_;
   uint32_t camera_image_size_width_;
@@ -318,6 +346,11 @@ class LibcameraAdapter {
   uint32_t camera_image_stride_bytes_;
   std::string isp_image_pixel_format_;
   float isp_frame_rate_;
+  AeMeteringMode ae_metering_mode_;
+  AeMeteringWindow ae_metering_window_;
+  float ev_compensation_;
+  bool is_set_ae_param_;
+  bool is_set_ev_compensation_;
 
   void UpdateTensorShapesProperty(CompletedRequestPtr payload);
   void UpdateImageRotationProperty(void);

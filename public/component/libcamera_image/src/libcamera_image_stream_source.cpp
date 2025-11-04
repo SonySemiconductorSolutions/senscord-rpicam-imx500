@@ -799,11 +799,11 @@ senscord::Status LibcameraImageStreamSource::Set(
                             "CameraAutoExposureProperty)");
   senscord::Status status;
 
-  camera_auto_exposure_ = *property;
-  status                = adapter_.SetAutoExposureParam(
-      camera_auto_exposure_.max_exposure_time,
-      camera_auto_exposure_.min_exposure_time, camera_auto_exposure_.max_gain,
-      camera_auto_exposure_.convergence_speed);
+  CameraAutoExposureProperty camera_auto_exposure = *property;
+  status = adapter_.SetAutoExposureParam(
+      camera_auto_exposure.max_exposure_time,
+      camera_auto_exposure.min_exposure_time, camera_auto_exposure.max_gain,
+      camera_auto_exposure.convergence_speed);
   if (!status.ok()) {
     util_->SendEventError(status);
     return status;
@@ -818,7 +818,20 @@ senscord::Status LibcameraImageStreamSource::Get(
   SENSCORD_LOG_DEBUG_TAGGED("libcamera",
                             "LibcameraImageStreamSource::Get(libcamera_image::"
                             "CameraAutoExposureProperty)");
-  *property = camera_auto_exposure_;
+  senscord::Status status;
+
+  CameraAutoExposureProperty camera_auto_exposure;
+  status = adapter_.GetAutoExposureParam(
+      camera_auto_exposure.max_exposure_time,
+      camera_auto_exposure.min_exposure_time, camera_auto_exposure.max_gain,
+      camera_auto_exposure.convergence_speed);
+  if (!status.ok()) {
+    util_->SendEventError(status);
+    return status;
+  }
+
+  *property = camera_auto_exposure;
+
   return senscord::Status::OK();
 }
 
