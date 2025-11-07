@@ -27,7 +27,6 @@
 
 #include "post_processing_stages/object_detect.hpp"
 #include "post_processing_stages/post_processing_stage.hpp"
-#include "senscord/develop/stream_source_utility.h"
 #include "senscord/osal.h"
 #include "senscord/property_types.h"
 #include "senscord/senscord.h"
@@ -184,9 +183,9 @@ senscord::Status LibcameraAdapter::Open(
   options_->contrast   = 1.0f;
   options_->saturation = 1.0f;
 
-  std::fill(std::begin(norm_val_),   std::end(norm_val_),   int32_t{0});
+  std::fill(std::begin(norm_val_), std::end(norm_val_), int32_t{0});
   std::fill(std::begin(norm_shift_), std::end(norm_shift_), uint32_t{0});
-  std::fill(std::begin(div_val_),    std::end(div_val_),    int32_t{1});
+  std::fill(std::begin(div_val_), std::end(div_val_), int32_t{1});
   div_shift_ = 0;
 
   // Parse the JSON file
@@ -757,6 +756,224 @@ static void RGB888_to_JPEG_fast(const uint8_t *input, int width, int height,
   jpeg_destroy_compress(&cinfo);
 }
 
+void LibcameraAdapter::GetOutputTensor(CompletedRequestPtr &payload,
+                                       senscord::MemoryAllocator *allocator,
+                                       uint64_t timestamp,
+                                       senscord::FrameInfo &frame) {
+  auto output = payload->metadata.get(controls::rpi::CnnOutputTensor);
+
+  if (!output || (output->size() == 0) || (output->data() == nullptr)) {
+    SENSCORD_LOG_WARNING_TAGGED(
+        "libcamera", "Invalid output tensor data, skipping processing");
+    return;
+  }
+
+  std::vector<float> output_tensor(output->data(),
+                                   output->data() + output->size());
+  senscord::ChannelRawData rawdata1 = {};
+  rawdata1.channel_id =
+      AITRIOS_SENSOR_CHANNEL_ID_INFERENCE_OUTPUT;  // senscord::kChannelIdImage(9);
+  rawdata1.captured_timestamp = timestamp;
+  rawdata1.data_type          = senscord::kRawDataTypeMeta;
+  rawdata1.data_offset        = 0;
+  rawdata1.data_size          = output_tensor.size() * sizeof(float);
+  senscord::Status status =
+      allocator->Allocate(rawdata1.data_size, &rawdata1.data_memory);
+  if (!status.ok()) {
+    SENSCORD_LOG_ERROR_TAGGED("libcamera",
+                              "Allocate(rawdata1.data_size) failed");
+    return;
+  }
+
+  std::memcpy(reinterpret_cast<void *>(rawdata1.data_memory->GetAddress()),
+              output_tensor.data(), rawdata1.data_size);
+  frame.channels.push_back(rawdata1);
+
+  // Get the output tensor information and update the tensor shapes
+  // property
+  UpdateTensorShapesProperty(payload);
+}
+
+void LibcameraAdapter::GetInputTensor(CompletedRequestPtr &payload,
+                                      senscord::MemoryAllocator *allocator,
+                                      uint64_t timestamp,
+                                      senscord::FrameInfo &frame) {
+  auto input       = payload->metadata.get(controls::rpi::CnnInputTensor);
+  auto *input_info = reinterpret_cast<const CnnInputTensorInfo *>(
+      payload->metadata.get(controls::rpi::CnnInputTensorInfo)->data());
+
+  if (!input || !input_info || (input->size() == 0) ||
+      (input->data() == nullptr)) {
+    SENSCORD_LOG_WARNING_TAGGED(
+        "libcamera", "Invalid input tensor data, skipping processing");
+    return;
+  }
+
+  std::vector<uint8_t> input_tensor(input->data(),
+                                    input->data() + input->size());
+  senscord::ChannelRawData rawdata2 = {};
+  rawdata2.channel_id =
+      AITRIOS_SENSOR_CHANNEL_ID_INFERENCE_INPUT_IMAGE;  // senscord::kChannelIdImage(9);
+  jpeg_mem_len_t enc_len;
+  uint8_t *enc_buffer = nullptr;
+  uint8_t *temp       = (uint8_t *)malloc(input_tensor.size());
+  pack_rgb888_planar_to_interleaved(
+      input_tensor.data(), temp, input_info->width, input_info->height,
+      norm_val_, norm_shift_, div_val_, div_shift_);
+
+  if (strncmp(it_image_property_->pixel_format.c_str(), "image_jp",
+              strlen("image_jp")) == 0) {
+    RGB888_to_JPEG_fast(temp, input_info->width, input_info->height,
+                        input_info->width * 3, 93, 0, enc_buffer, enc_len);
+    free(temp);
+  } else {
+    it_image_property_->pixel_format = "image_rgb24";
+    enc_buffer                       = temp;
+    enc_len                          = input_tensor.size();
+  }
+
+  rawdata2.captured_timestamp = timestamp;
+  rawdata2.data_type          = senscord::kRawDataTypeImage;
+  rawdata2.data_offset        = 0;
+  rawdata2.data_size          = enc_len;
+  senscord::Status status =
+      allocator->Allocate(rawdata2.data_size, &rawdata2.data_memory);
+  if (!status.ok()) {
+    SENSCORD_LOG_ERROR_TAGGED("libcamera",
+                              "Allocate(input_tensor.size) failed");
+    if (enc_buffer) {
+      free(enc_buffer);
+    }
+    return;
+  }
+
+  std::memcpy(reinterpret_cast<void *>(rawdata2.data_memory->GetAddress()),
+              enc_buffer, rawdata2.data_size);
+  if (enc_buffer) {
+    free(enc_buffer);
+  }
+  frame.channels.push_back(rawdata2);
+  it_image_property_->width        = input_info->width;
+  it_image_property_->height       = input_info->height;
+  it_image_property_->stride_bytes = input_info->width * 3;
+  util_->UpdateChannelProperty(AITRIOS_SENSOR_CHANNEL_ID_INFERENCE_INPUT_IMAGE,
+                               senscord::kImagePropertyKey, it_image_property_);
+}
+
+void LibcameraAdapter::GetRawImage(CompletedRequestPtr &payload,
+                                   senscord::MemoryAllocator *allocator,
+                                   uint64_t timestamp,
+                                   senscord::FrameInfo &frame) {
+  libcamera::Stream *stream = libcam_->ViewfinderStream();
+  if (!stream) {
+    SENSCORD_LOG_ERROR_TAGGED("libcamera", "ViewfinderStream() returned null");
+    return;
+  }
+
+  libcamera::FrameBuffer *buffer = payload->buffers[stream];
+
+  if (!buffer || buffer->planes().empty()) {
+    SENSCORD_LOG_ERROR_TAGGED("libcamera",
+                              "Invalid ViewFinder buffer, skipping processing");
+    return;
+  }
+
+  BufferReadSync r(libcam_, buffer);
+  libcamera::Span span = r.Get()[0];
+
+  if ((span.size() == 0) || (span.data() == nullptr)) {
+    SENSCORD_LOG_ERROR_TAGGED(
+        "libcamera", "Invalid ViewFinder span data, skipping processing");
+    return;
+  }
+
+  const int fd  = buffer->planes()[0].fd.get();
+  void *src_ptr = ::mmap(nullptr, span.size(), PROT_READ, MAP_SHARED, fd, 0);
+  if (src_ptr == MAP_FAILED) {
+    struct stat s;
+    fstat(fd, &s);
+    SENSCORD_LOG_ERROR_TAGGED(
+        "libcamera", "mmap() failed: %s -> fd: %d, size: %d, offset: %d",
+        strerror(errno), fd, span.size(), 0);
+    SENSCORD_LOG_ERROR_TAGGED("libcamera", "fstat(%d): st_size:%d", fd,
+                              s.st_size);
+    return;
+  }
+
+  StreamInfo info = libcam_->GetStreamInfo(stream);
+  if ((info.width == 0) || (info.height == 0)) {
+    SENSCORD_LOG_ERROR_TAGGED(
+        "libcamera", "GetStreamInfo() returned invalid dimensions: %dx%d",
+        info.width, info.height);
+    return;
+  }
+
+  jpeg_mem_len_t enc_len;
+  uint8_t *enc_buffer = nullptr;
+
+  if (strncmp(full_image_property_->pixel_format.c_str(), "image_jp",
+              strlen("image_jp")) == 0) {
+    if (info.pixel_format == libcamera::formats::BGR888) {
+      SENSCORD_LOG_DEBUG_TAGGED("libcamera", "RGB888_to_JPEG_fast");
+      RGB888_to_JPEG_fast((uint8_t *)src_ptr, info.width, info.height,
+                          info.stride, 93, 0, enc_buffer, enc_len);
+    } else if (info.pixel_format == libcamera::formats::YUV420) {
+      SENSCORD_LOG_DEBUG_TAGGED("libcamera", "YUV420_to_JPEG_fast");
+      YUV420_to_JPEG_fast((uint8_t *)src_ptr, info.width, info.height,
+                          info.stride, 93, 0, enc_buffer, enc_len);
+    } else {
+      SENSCORD_LOG_ERROR_TAGGED("libcamera", "Unsupported pixel format");
+      ::munmap(src_ptr, span.size());
+    }
+  } else {
+    enc_len    = (jpeg_mem_len_t)span.size();
+    enc_buffer = (uint8_t *)src_ptr;
+  }
+
+  if ((enc_buffer == nullptr) || (enc_len == 0)) {
+    SENSCORD_LOG_ERROR_TAGGED(
+        "libcamera", "Invalid encoded buffer, skipping ViewFinder processing");
+    ::munmap(src_ptr, span.size());
+    return;
+  }
+
+  // ViewFinder Channel
+  senscord::ChannelRawData rawdata0 = {};
+  rawdata0.channel_id         = AITRIOS_SENSOR_CHANNEL_ID_INFERENCE_RAW_IMAGE;
+  rawdata0.captured_timestamp = timestamp;
+  rawdata0.data_type          = senscord::kRawDataTypeImage;
+  rawdata0.data_offset        = 0;
+  rawdata0.data_size          = enc_len;
+
+  senscord::Status status =
+      allocator->Allocate(rawdata0.data_size, &rawdata0.data_memory);
+  if (!status.ok()) {
+    SENSCORD_LOG_ERROR_TAGGED("libcamera",
+                              "Allocate(rawdata0.data_size) failed");
+    if (enc_buffer && (src_ptr != enc_buffer)) {
+      free(enc_buffer);
+    }
+    ::munmap(src_ptr, span.size());
+    return;
+  }
+
+  std::memcpy(reinterpret_cast<void *>(rawdata0.data_memory->GetAddress()),
+              enc_buffer, rawdata0.data_size);
+  if (enc_buffer && (src_ptr != enc_buffer)) {
+    free(enc_buffer);
+  }
+  ::munmap(src_ptr, span.size());
+
+  frame.channels.push_back(rawdata0);
+  full_image_property_->width        = info.width;
+  full_image_property_->height       = info.height;
+  full_image_property_->stride_bytes = info.stride;
+  camera_image_stride_bytes_         = info.stride;
+  util_->UpdateChannelProperty(AITRIOS_SENSOR_CHANNEL_ID_INFERENCE_RAW_IMAGE,
+                               senscord::kImagePropertyKey,
+                               full_image_property_);
+}
+
 void LibcameraAdapter::GetFrames(std::vector<senscord::FrameInfo> *frames,
                                  bool dry_run) {
   static int seq_num        = 0;
@@ -814,156 +1031,24 @@ void LibcameraAdapter::GetFrames(std::vector<senscord::FrameInfo> *frames,
   uint64_t timestamp = 0;
   senscord::osal::OSGetTime(&timestamp);
 
-  auto output      = payload->metadata.get(controls::rpi::CnnOutputTensor);
-  auto input       = payload->metadata.get(controls::rpi::CnnInputTensor);
-  auto *input_info = reinterpret_cast<const CnnInputTensorInfo *>(
-      payload->metadata.get(controls::rpi::CnnInputTensorInfo)->data());
-
   // Output Tensor
-  if (output) {
-    std::vector<float> output_tensor(output->data(),
-                                     output->data() + output->size());
-    senscord::ChannelRawData rawdata1 = {};
-    rawdata1.channel_id =
-        AITRIOS_SENSOR_CHANNEL_ID_INFERENCE_OUTPUT;  // senscord::kChannelIdImage(9);
-    rawdata1.captured_timestamp = timestamp;
-    rawdata1.data_type          = senscord::kRawDataTypeMeta;
-    rawdata1.data_offset        = 0;
-    rawdata1.data_size          = output_tensor.size() * sizeof(float);
-    status = allocator->Allocate(rawdata1.data_size, &rawdata1.data_memory);
-    if (!status.ok()) {
-      SENSCORD_LOG_ERROR_TAGGED("libcamera",
-                                "Allocate(rawdata1.data_size) failed");
-    }
-    std::memcpy(reinterpret_cast<void *>(rawdata1.data_memory->GetAddress()),
-                output_tensor.data(), rawdata1.data_size);
-    frame.channels.push_back(rawdata1);
-
-    // Get the output tensor information and update the tensor shapes property
-    UpdateTensorShapesProperty(payload);
-  }
+  GetOutputTensor(payload, allocator, timestamp, frame);
 
   // Input Tensor
-  if (input && input_info) {
-    senscord::ChannelRawData rawdata2 = {};
-    rawdata2.channel_id =
-        AITRIOS_SENSOR_CHANNEL_ID_INFERENCE_INPUT_IMAGE;  // senscord::kChannelIdImage(9);
-    std::vector<uint8_t> input_tensor(input->data(),
-                                      input->data() + input->size());
-    jpeg_mem_len_t enc_len;
-    uint8_t *enc_buffer = nullptr;
-    uint8_t *temp       = (uint8_t *)malloc(input_tensor.size());
-    pack_rgb888_planar_to_interleaved(
-        input_tensor.data(), temp, input_info->width, input_info->height,
-        norm_val_, norm_shift_, div_val_, div_shift_);
+  GetInputTensor(payload, allocator, timestamp, frame);
 
-    if (strncmp(it_image_property_->pixel_format.c_str(), "image_jp",
-                strlen("image_jp")) == 0) {
-      RGB888_to_JPEG_fast(temp, input_info->width, input_info->height,
-                          input_info->width * 3, 93, 0, enc_buffer, enc_len);
-      free(temp);
-    } else {
-      it_image_property_->pixel_format = "image_rgb24";
-      enc_buffer                       = temp;
-      enc_len                          = input_tensor.size();
-    }
-
-    rawdata2.captured_timestamp = timestamp;
-    rawdata2.data_type          = senscord::kRawDataTypeImage;
-    rawdata2.data_offset        = 0;
-    rawdata2.data_size          = enc_len;
-    status = allocator->Allocate(rawdata2.data_size, &rawdata2.data_memory);
-    if (!status.ok()) {
-      SENSCORD_LOG_ERROR_TAGGED("libcamera",
-                                "Allocate(input_tensor.size) failed");
-    }
-    std::memcpy(reinterpret_cast<void *>(rawdata2.data_memory->GetAddress()),
-                enc_buffer, rawdata2.data_size);
-    if (enc_buffer) {
-      free(enc_buffer);
-    }
-    frame.channels.push_back(rawdata2);
-    it_image_property_->width        = input_info->width;
-    it_image_property_->height       = input_info->height;
-    it_image_property_->stride_bytes = input_info->width * 3;
-    util_->UpdateChannelProperty(
-        AITRIOS_SENSOR_CHANNEL_ID_INFERENCE_INPUT_IMAGE,
-        senscord::kImagePropertyKey, it_image_property_);
-  }
-
-  libcamera::Stream *stream      = libcam_->ViewfinderStream();
-  StreamInfo info                = libcam_->GetStreamInfo(stream);
-  libcamera::FrameBuffer *buffer = payload->buffers[stream];
-  BufferReadSync r(libcam_, buffer);
-  libcamera::Span span = r.Get()[0];
   // ViewFinder
-  const int fd  = buffer->planes()[0].fd.get();
-  void *src_ptr = ::mmap(nullptr, span.size(), PROT_READ, MAP_SHARED, fd, 0);
-  if (src_ptr == MAP_FAILED) {
-    struct stat s;
-    fstat(fd, &s);
-    SENSCORD_LOG_ERROR_TAGGED(
-        "libcamera", "mmap() failed: %s -> fd: %d, size: %d, offset: %d",
-        strerror(errno), fd, span.size(), 0);
-    SENSCORD_LOG_ERROR_TAGGED("libcamera", "fstat(%d): st_size:%d", fd,
-                              s.st_size);
-  }
-
-  jpeg_mem_len_t enc_len;
-  uint8_t *enc_buffer = nullptr;
-
-  if (strncmp(full_image_property_->pixel_format.c_str(), "image_jp",
-              strlen("image_jp")) == 0) {
-    if (info.pixel_format == libcamera::formats::BGR888) {
-      SENSCORD_LOG_DEBUG_TAGGED("libcamera", "RGB888_to_JPEG_fast");
-      RGB888_to_JPEG_fast((uint8_t *)src_ptr, info.width, info.height,
-                          info.stride, 93, 0, enc_buffer, enc_len);
-    } else if (info.pixel_format == libcamera::formats::YUV420) {
-      SENSCORD_LOG_DEBUG_TAGGED("libcamera", "YUV420_to_JPEG_fast");
-      YUV420_to_JPEG_fast((uint8_t *)src_ptr, info.width, info.height,
-                          info.stride, 93, 0, enc_buffer, enc_len);
-    } else {
-      SENSCORD_LOG_ERROR_TAGGED("libcamera", "Unsupported pixel format");
-      return;
-    }
-  } else {
-    enc_len    = (jpeg_mem_len_t)span.size();
-    enc_buffer = (uint8_t *)src_ptr;
-  }
-  // ViewFinder Channel
-  senscord::ChannelRawData rawdata0 = {};
-  rawdata0.channel_id         = AITRIOS_SENSOR_CHANNEL_ID_INFERENCE_RAW_IMAGE;
-  rawdata0.captured_timestamp = timestamp;
-  rawdata0.data_type          = senscord::kRawDataTypeImage;
-  rawdata0.data_offset        = 0;
-  rawdata0.data_size          = enc_len;
-
-  status = allocator->Allocate(rawdata0.data_size, &rawdata0.data_memory);
-  if (!status.ok()) {
-    SENSCORD_LOG_ERROR_TAGGED("libcamera",
-                              "Allocate(rawdata0.data_size) failed");
-  } else {
-    std::memcpy(reinterpret_cast<void *>(rawdata0.data_memory->GetAddress()),
-                enc_buffer, rawdata0.data_size);
-    if (enc_buffer && (src_ptr != enc_buffer)) {
-      free(enc_buffer);
-    }
-    ::munmap(src_ptr, span.size());
-  }
-
-  frame.channels.push_back(rawdata0);
-  full_image_property_->width        = info.width;
-  full_image_property_->height       = info.height;
-  full_image_property_->stride_bytes = info.stride;
-  camera_image_stride_bytes_         = info.stride;
-  util_->UpdateChannelProperty(AITRIOS_SENSOR_CHANNEL_ID_INFERENCE_RAW_IMAGE,
-                               senscord::kImagePropertyKey,
-                               full_image_property_);
+  GetRawImage(payload, allocator, timestamp, frame);
 
   std::lock_guard<std::mutex> lock_frames(mutex_frames_);
-  frames_.push_back(frame);
-  *frames = frames_;
+
+  if (frame.channels.size() != 0) {
+    frames_.push_back(frame);
+    *frames = frames_;
+  }
+
   frames_.clear();
+
   return;
 }
 
@@ -2758,7 +2843,8 @@ bool LibcameraAdapter::UpdateAutoExposureParam(void) {
   }
 
   if (!isfinite(auto_exposure_.max_gain)) {
-    SENSCORD_LOG_WARNING_TAGGED("libcamera", "AutoExposure max_gain is INFINITY.");
+    SENSCORD_LOG_WARNING_TAGGED("libcamera",
+                                "AutoExposure max_gain is INFINITY.");
     return false;
   }
 
@@ -2933,7 +3019,7 @@ bool LibcameraAdapter::SetPresetEvCompensation(void) {
   int8_t ev_index                    = 0;
   std::vector<uint8_t> ev_gain_array = {0x05, 0x0A, 0x0F, 0x14, 0x19, 0x1E};
 
-  status = reg_handle_.WriteRegister(kRegEvsel, (uint8_t *)(&ev_index));
+  status = reg_handle_.ReadRegister(kRegEvsel, (uint8_t *)(&ev_index));
   if (!status.ok()) {
     return false;
   }
@@ -2962,11 +3048,10 @@ bool LibcameraAdapter::UpdateEvCompensation(void) {
     return false;
   }
 
-  int8_t ev_index             = 0;
-  std::vector<float> ev_array = {0.0f, 0.25f, 0.5f, 0.75f, 1.0f, 1.25f, 1.5f};
+  int8_t ev_index = 0;
 
-  for (int8_t i = (int8_t)(ev_array.size() - 1); i > 0; --i) {
-    if (std::isgreaterequal(ev_array[i], fabsf(ev_compensation_))) {
+  for (int8_t i = (int8_t)(ev_array_.size() - 1); i > 0; --i) {
+    if (std::isgreaterequal(fabsf(ev_compensation_), ev_array_[i])) {
       ev_index = i;
       break;
     }
@@ -2978,12 +3063,13 @@ bool LibcameraAdapter::UpdateEvCompensation(void) {
 
   if (!SetEvCompensation(ev_index, nullptr, nullptr)) {
     SENSCORD_LOG_WARNING_TAGGED("libcamera", "Failed to set ev_compensation.");
+    return false;
+  }
 
-    if (!SetPresetEvCompensation()) {
-      SENSCORD_LOG_ERROR_TAGGED("libcamera",
-                                "Failed to set preset ev_compensation.");
-      return false;
-    }
+  if (!SetPresetEvCompensation()) {
+    SENSCORD_LOG_ERROR_TAGGED("libcamera",
+                              "Failed to set preset ev_compensation.");
+    return false;
   }
 
   return true;
@@ -3008,8 +3094,7 @@ bool LibcameraAdapter::ReadEvCompensation(float &ev_compensation) {
     return false;
   }
 
-  std::vector<float> ev_array = {0.0f, 0.25f, 0.5f, 0.75f, 1.0f, 1.25f, 1.5f};
-  ev_compensation             = ev_array[ev_index_abs];
+  ev_compensation = ev_array_[ev_index_abs];
   if (signbit(ev_index)) {
     ev_compensation *= -1;
   }

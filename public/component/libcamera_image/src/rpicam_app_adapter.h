@@ -16,6 +16,7 @@
 #include "core/options.hpp"
 #include "core/rpicam_app.hpp"
 #include "libcamera_image_sensor_register.h"
+#include "senscord/develop/stream_source_utility.h"
 #include "senscord/libcamera_image/libcamera_image_types.h"
 #include "v4l2_ctrl_manager.h"
 
@@ -251,6 +252,15 @@ class LibcameraAdapter {
   bool GetDeviceID(std::string &device_id_str);
 
  private:
+  void GetOutputTensor(CompletedRequestPtr &payload,
+                       senscord::MemoryAllocator *allocator, uint64_t timestamp,
+                       senscord::FrameInfo &frame);
+  void GetInputTensor(CompletedRequestPtr &payload,
+                      senscord::MemoryAllocator *allocator, uint64_t timestamp,
+                      senscord::FrameInfo &frame);
+  void GetRawImage(CompletedRequestPtr &payload,
+                   senscord::MemoryAllocator *allocator, uint64_t timestamp,
+                   senscord::FrameInfo &frame);
   bool CheckBundleIdItOnly(const std::string ai_model_bundle_id);
   std::string ReplaceCustomJsonPathString(const std::string &path,
                                           const std::string &replacement);
@@ -351,6 +361,7 @@ class LibcameraAdapter {
   float ev_compensation_;
   bool is_set_ae_param_;
   bool is_set_ev_compensation_;
+  std::vector<float> ev_array_ = {0.0f, 0.25f, 0.5f, 0.75f, 1.0f, 1.25f, 1.5f};
 
   void UpdateTensorShapesProperty(CompletedRequestPtr payload);
   void UpdateImageRotationProperty(void);
