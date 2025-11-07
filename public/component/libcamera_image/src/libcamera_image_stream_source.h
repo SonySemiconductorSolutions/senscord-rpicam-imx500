@@ -391,7 +391,6 @@ class LibcameraImageStreamSource : public senscord::ImageStreamSource {
   std::string imx500_device_id_;
   std::mutex device_id_mutex_;
   CameraExposureModeProperty camera_exposure_mode_;
-  CameraEvCompensationProperty camera_ev_compensation_;
   CameraAntiFlickerModeProperty camera_anti_flicker_mode_;
   CameraManualExposureProperty camera_manual_exposure_;
   CameraAutoExposureMeteringProperty camera_auto_exposure_metering_;

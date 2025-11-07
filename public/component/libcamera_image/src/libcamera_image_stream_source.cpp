@@ -843,10 +843,9 @@ senscord::Status LibcameraImageStreamSource::Set(
                             "CameraEvCompensationProperty)");
   senscord::Status status;
 
-  camera_ev_compensation_ = *property;
+  CameraEvCompensationProperty camera_ev_compensation = *property;
 
-  status =
-      adapter_.SetAeEvCompensation(camera_ev_compensation_.ev_compensation);
+  status = adapter_.SetAeEvCompensation(camera_ev_compensation.ev_compensation);
   if (!status.ok()) {
     util_->SendEventError(status);
     return status;
@@ -861,7 +860,17 @@ senscord::Status LibcameraImageStreamSource::Get(
   SENSCORD_LOG_DEBUG_TAGGED("libcamera",
                             "LibcameraImageStreamSource::Get(libcamera_image::"
                             "CameraEvCompensationProperty)");
-  *property = camera_ev_compensation_;
+  senscord::Status status;
+
+  CameraEvCompensationProperty camera_ev_compensation;
+
+  status = adapter_.GetAeEvCompensation(camera_ev_compensation.ev_compensation);
+  if (!status.ok()) {
+    util_->SendEventError(status);
+    return status;
+  }
+
+  *property = camera_ev_compensation;
   return senscord::Status::OK();
 }
 
