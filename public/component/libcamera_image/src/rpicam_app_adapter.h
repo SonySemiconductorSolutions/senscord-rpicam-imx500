@@ -137,6 +137,16 @@ struct ImageCrop {
   uint32_t h;
 };
 
+struct SupportedIspParam {
+  libcamera::PixelFormat pixel_format;
+  uint32_t width_min;
+  uint32_t width_max;
+  uint32_t height_min;
+  uint32_t height_max;
+  uint32_t hStep;
+  uint32_t vStep;
+};
+
 namespace senscord {
 
 class Status;
@@ -304,6 +314,8 @@ class LibcameraAdapter {
   bool SetPresetEvCompensation(void);
   bool UpdateEvCompensation(void);
   bool ReadEvCompensation(float &ev_compensation);
+  void GetSupportedIspParams(void);
+  senscord::Status CheckIspParams(void);
 
  private:
   static const uint8_t kImx500SensorId = 0;  // IMX500 sensor celsius
@@ -362,6 +374,7 @@ class LibcameraAdapter {
   bool is_set_ae_param_;
   bool is_set_ev_compensation_;
   std::vector<float> ev_array_ = {0.0f, 0.25f, 0.5f, 0.75f, 1.0f, 1.25f, 1.5f};
+  std::vector<SupportedIspParam> supported_isp_params_;
 
   void UpdateTensorShapesProperty(CompletedRequestPtr payload);
   void UpdateImageRotationProperty(void);

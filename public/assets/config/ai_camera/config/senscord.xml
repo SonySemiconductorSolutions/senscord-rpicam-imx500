@@ -22,12 +22,8 @@
       <address instanceName="libcamera_image_instance" type="image" port="0"/>
       <arguments>
         <argument name="device" value="1"/>
-        <!-- <argument name="device" value="/base/soc/i2c0mux/i2c@1/imx708@1a"/> -->
-        <argument name="width" value="640"/>
-        <argument name="height" value="480"/>
         <argument name="pixel_format" value="image_rgb24"/>
-        <argument name="post_process_file" value="/opt/senscord/share/rpi-camera-assets/custom.json"/>
-        <argument name="fps" value="10"/>
+        <argument name="post_process_file" value="/opt/senscord/share/rpi-camera-assets/custom_vga_itonly.json"/>
         <argument name="display_channel" value="1"/>
       </arguments>
     </stream>
