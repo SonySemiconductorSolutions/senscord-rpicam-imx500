@@ -26,33 +26,39 @@ SensorRegister::SensorRegister() : handle_(-1) {}
 SensorRegister::~SensorRegister() { Close(); }
 
 senscord::Status SensorRegister::Open(void) {
-  std::lock_guard<std::mutex> lock(mutex_access_);
-  if (handle_ != -1) {
-    return senscord::Status::OK();  // Already opened
+  {
+    std::lock_guard<std::mutex> lock(mutex_access_);
+    if (handle_ != -1) {
+      return senscord::Status::OK();  // Already opened
+    }
+
+    std::string dev_path = I2C_DEVICE_NAME;
+    handle_              = open(dev_path.c_str(), O_RDWR);
+    if (handle_ < 0) {
+      handle_ = -1;
+      SENSCORD_LOG_ERROR_TAGGED("libcamera", "I2C open error: %s",
+                                strerror(errno));
+      return SENSCORD_STATUS_FAIL("libcamera",
+                                  senscord::Status::kCauseInvalidOperation,
+                                  "Failed to open Sensor(I2C) device.");
+    }
+
+    if (ioctl(handle_, I2C_SLAVE_FORCE, kDeviceAddress) == 0) {
+      return senscord::Status::OK();
+    }
   }
 
-  std::string dev_path = I2C_DEVICE_NAME;
-  handle_              = open(dev_path.c_str(), O_RDWR);
-  if (handle_ < 0) {
-    handle_ = -1;
-    SENSCORD_LOG_ERROR_TAGGED("libcamera", "I2C open error: %s",
-                              strerror(errno));
-    return SENSCORD_STATUS_FAIL("libcamera",
-                                senscord::Status::kCauseInvalidOperation,
-                                "Failed to open Sensor(I2C) device.");
-  }
+  // Close() acquires mutex_access_, so we must exit this scope to unlock before
+  // calling it (to prevent deadlock)
+  SENSCORD_LOG_ERROR_TAGGED("libcamera", "I2C ioctl(DevAddress) error: %s",
+                            strerror(errno));
 
-  if (ioctl(handle_, I2C_SLAVE_FORCE, kDeviceAddress) < 0) {
-    SENSCORD_LOG_ERROR_TAGGED("libcamera", "I2C ioctl(DevAddress) error: %s",
-                              strerror(errno));
-    Close();
-    handle_ = -1;
-    return SENSCORD_STATUS_FAIL("libcamera",
-                                senscord::Status::kCauseInvalidOperation,
-                                "Failed to set I2C slave address.");
-  }
+  Close();
+  handle_ = -1;
 
-  return senscord::Status::OK();
+  return SENSCORD_STATUS_FAIL("libcamera",
+                              senscord::Status::kCauseInvalidOperation,
+                              "Failed to set I2C slave address.");
 }
 
 senscord::Status SensorRegister::Close(void) {

@@ -130,29 +130,11 @@ senscord::Status LibcameraAdapter::Open(
   it_image_property_          = new senscord::ImageProperty(image_property);
   full_image_property_        = new senscord::ImageProperty(image_property);
   base_image_property_        = image_property;
-  options_->viewfinder_width  = 640;
-  options_->viewfinder_height = 480;
+  options_->viewfinder_width  = CAMERA_IMAGE_WIDTH_DEFAULT;
+  options_->viewfinder_height = CAMERA_IMAGE_HEIGHT_DEFAULT;
+  options_->framerate         = CAMERA_FRAME_RATE_DEFAULT;
   options_->post_process_file =
-      "/usr/share/rpi-camera-assets/imx500_mobilenet_ssd.json";
-  {
-    status = util_->GetStreamArgument("width", &uint_value);
-    if (status.ok()) {
-      options_->viewfinder_width = static_cast<uint32_t>(uint_value);
-    }
-  }
-
-  {
-    status = util_->GetStreamArgument("height", &uint_value);
-    if (status.ok()) {
-      options_->viewfinder_height = static_cast<uint32_t>(uint_value);
-    }
-  }
-  {
-    status = util_->GetStreamArgument("fps", &uint_value);
-    if (status.ok()) {
-      options_->framerate = static_cast<uint32_t>(uint_value);
-    }
-  }
+      "/opt/senscord/share/rpi-camera-assets/custom_vga_itonly.json";
   {
     status = util_->GetStreamArgument("post_process_file", &post_process_file);
     if (status.ok()) {
@@ -284,6 +266,8 @@ senscord::Status LibcameraAdapter::Open(
       camera_ = *result;
     }
   }
+
+  GetSupportedIspParams();
 
   status = reg_handle_.Open();
   if (!status.ok()) {
@@ -491,6 +475,11 @@ senscord::Status LibcameraAdapter::Configure(
                                 senscord::Status::kCauseInvalidOperation, "");
   }
 
+  status = CheckIspParams();
+  if (!status.ok()) {
+    return status;
+  }
+
   options_->no_raw                 = false;
   options_->isp_width              = isp_image_width_;
   options_->isp_height             = isp_image_height_;
@@ -518,8 +507,8 @@ senscord::Status LibcameraAdapter::Configure(
   if ((options_->viewfinder_mode.width == 0) ||
       (options_->viewfinder_mode.height == 0)) {
     return SENSCORD_STATUS_FAIL(
-        "libcamera", senscord::Status::kCauseNotSupported,
-        "Not supported camera param: width %d, height %d, frame_rate %f",
+        "libcamera", senscord::Status::kCauseInvalidArgument,
+        "Invalid camera param: width %d, height %d, frame_rate %f",
         camera_image_size_width_, camera_image_size_height_,
         camera_frame_rate_);
   }
@@ -1169,9 +1158,9 @@ senscord::Status LibcameraAdapter::SetProperty(
     options_->post_process_file = post_process_file;
     ai_model_bundle_id_         = bundle_id;
   } else {
-    return SENSCORD_STATUS_FAIL(
-        "libcamera", senscord::Status::kCauseInvalidOperation,
-        "The set ai_model_bundle_id(%s) is invalid.", bundle_id.c_str());
+    return SENSCORD_STATUS_FAIL("libcamera", senscord::Status::kCauseNotFound,
+                                "The set ai_model_bundle_id(%s) is not found.",
+                                bundle_id.c_str());
   }
 
   return senscord::Status::OK();
@@ -1472,9 +1461,22 @@ senscord::Status LibcameraAdapter::SetAeMetering(AeMeteringMode mode,
                                                  AeMeteringWindow &window) {
   switch (mode) {
     case kAeMeteringFullScreen:
+      ae_metering_mode_   = mode;
+      ae_metering_window_ = window;
+      break;
     case kAeMeteringUserWindow:
       ae_metering_mode_   = mode;
       ae_metering_window_ = window;
+
+      uint16_t top, left, width, height;  // dummy
+      if (!ConvertWindowToSensor(&top, &left, &width, &height)) {
+        return SENSCORD_STATUS_FAIL(
+            "libcamera", senscord::Status::kCauseNotSupported,
+            "Invalid Window: [%d, %d, %d, %d]", ae_metering_window_.top,
+            ae_metering_window_.left, ae_metering_window_.bottom,
+            ae_metering_window_.right);
+      }
+
       break;
     default:
       return SENSCORD_STATUS_FAIL("libcamera",
@@ -1565,6 +1567,10 @@ senscord::Status LibcameraAdapter::SetImageCrop(uint32_t left, uint32_t top,
 
 senscord::Status LibcameraAdapter::SetIspImage(uint32_t width, uint32_t height,
                                                char *pixel_format) {
+  uint32_t isp_image_width_pre           = isp_image_width_;
+  uint32_t isp_image_height_pre          = isp_image_height_;
+  std::string isp_image_pixel_format_pre = isp_image_pixel_format_;
+
   isp_image_width_  = width;
   isp_image_height_ = height;
 
@@ -1573,6 +1579,14 @@ senscord::Status LibcameraAdapter::SetIspImage(uint32_t width, uint32_t height,
     isp_image_pixel_format_ = options_->viewfinder_mode_string;
   } else {
     isp_image_pixel_format_ = std::string(pixel_format);
+  }
+
+  senscord::Status status = CheckIspParams();
+  if (!status.ok()) {
+    isp_image_width_        = isp_image_width_pre;
+    isp_image_height_       = isp_image_height_pre;
+    isp_image_pixel_format_ = isp_image_pixel_format_pre;
+    return status;
   }
 
   return senscord::Status::OK();
@@ -2461,6 +2475,14 @@ bool LibcameraAdapter::ConvertWindowToSensor(uint16_t *top, uint16_t *left,
     return false;
   }
 
+  if (ae_metering_window_.bottom > camera_image_size_height_) {
+    return false;
+  }
+
+  if (ae_metering_window_.right > camera_image_size_width_) {
+    return false;
+  }
+
   uint16_t converted_top  = ConvertVerticalToSensor(ae_metering_window_.top);
   uint16_t converted_left = ConvertHorizontalToSensor(ae_metering_window_.left);
   uint16_t converted_bottom =
@@ -3100,6 +3122,137 @@ bool LibcameraAdapter::ReadEvCompensation(float &ev_compensation) {
   }
 
   return true;
+}
+
+senscord::Status LibcameraAdapter::CheckIspParams(void) {
+  if (supported_isp_params_.empty()) {
+    return SENSCORD_STATUS_FAIL("libcamera",
+                                senscord::Status::kCauseInvalidOperation,
+                                "Supported ISP parameters are not initialized");
+  }
+
+  bool format_found = false;
+  for (const auto &param : supported_isp_params_) {
+    if (((param.pixel_format == libcamera::formats::BGR888) &&
+         (isp_image_pixel_format_ == "image_rgb24")) ||
+        ((param.pixel_format == libcamera::formats::YUV420) &&
+         (isp_image_pixel_format_ == "image_yuv420"))) {
+      format_found = true;
+
+      if ((isp_image_width_ < param.width_min) ||
+          (isp_image_width_ > param.width_max)) {
+        SENSCORD_LOG_ERROR_TAGGED(
+            "libcamera", "ISP width %d is out of range [%d, %d] for format %s",
+            isp_image_width_, param.width_min, param.width_max,
+            isp_image_pixel_format_.c_str());
+        return SENSCORD_STATUS_FAIL("libcamera",
+                                    senscord::Status::kCauseInvalidArgument,
+                                    "ISP width is out of range");
+      }
+
+      if ((isp_image_height_ < param.height_min) ||
+          (isp_image_height_ > param.height_max)) {
+        SENSCORD_LOG_ERROR_TAGGED(
+            "libcamera", "ISP height %d is out of range [%d, %d] for format %s",
+            isp_image_height_, param.height_min, param.height_max,
+            isp_image_pixel_format_.c_str());
+        return SENSCORD_STATUS_FAIL("libcamera",
+                                    senscord::Status::kCauseInvalidArgument,
+                                    "ISP height is out of range");
+      }
+
+      if (param.hStep != 0) {
+        if ((isp_image_width_ % param.hStep) != 0) {
+          SENSCORD_LOG_ERROR_TAGGED(
+              "libcamera",
+              "ISP width %d is not aligned to hStep %d (min=%d) for format %s",
+              isp_image_width_, param.hStep, param.width_min,
+              isp_image_pixel_format_.c_str());
+          return SENSCORD_STATUS_FAIL("libcamera",
+                                      senscord::Status::kCauseInvalidArgument,
+                                      "ISP width is not aligned to hStep");
+        }
+      } else {
+        SENSCORD_LOG_WARNING_TAGGED("libcamera", "hStep is zero.");
+      }
+
+      if (param.vStep != 0) {
+        if ((isp_image_height_ % param.vStep) != 0) {
+          SENSCORD_LOG_ERROR_TAGGED(
+              "libcamera",
+              "ISP height %d is not aligned to vStep %d (min=%d) for format %s",
+              isp_image_height_, param.vStep, param.height_min,
+              isp_image_pixel_format_.c_str());
+          return SENSCORD_STATUS_FAIL("libcamera",
+                                      senscord::Status::kCauseInvalidArgument,
+                                      "ISP height is not aligned to vStep");
+        }
+      } else {
+        SENSCORD_LOG_WARNING_TAGGED("libcamera", "vStep is zero.");
+      }
+
+      SENSCORD_LOG_INFO_TAGGED("libcamera",
+                               "CheckIspParams: ISP parameters are valid - "
+                               "format=%s, width=%d, height=%d",
+                               isp_image_pixel_format_.c_str(),
+                               isp_image_width_, isp_image_height_);
+      return senscord::Status::OK();
+    }
+  }
+
+  if (!format_found) {
+    SENSCORD_LOG_ERROR_TAGGED("libcamera",
+                              "ISP pixel format '%s' is not supported",
+                              isp_image_pixel_format_.c_str());
+    return SENSCORD_STATUS_FAIL("libcamera",
+                                senscord::Status::kCauseInvalidArgument,
+                                "ISP pixel format is not supported");
+  }
+
+  return senscord::Status::OK();
+}
+
+void LibcameraAdapter::GetSupportedIspParams(void) {
+  supported_isp_params_.clear();
+
+  /*The ISP of the Raspberry Pi does not have any frame rate limitations, so no
+   * checks are performed. */
+
+  std::unique_ptr<libcamera::CameraConfiguration> config =
+      camera_->generateConfiguration({libcamera::StreamRole::Viewfinder});
+  const libcamera::StreamFormats &formats = config->at(0).formats();
+
+  for (const auto &pixel_format : formats.pixelformats()) {
+    if ((pixel_format == libcamera::formats::BGR888) ||
+        (pixel_format == libcamera::formats::YUV420)) {
+      SENSCORD_LOG_INFO_TAGGED("libcamera", "pixel_format: %s (FourCC: 0x%08x)",
+                               pixel_format.toString().c_str(),
+                               pixel_format.fourcc());
+
+      SupportedIspParam tmp;
+      tmp.pixel_format = pixel_format;
+
+      const libcamera::SizeRange &size_range = formats.range(pixel_format);
+      SENSCORD_LOG_INFO_TAGGED("libcamera", "  Size Range:");
+      SENSCORD_LOG_INFO_TAGGED("libcamera", "    Min: %ux%u",
+                               size_range.min.width, size_range.min.height);
+      SENSCORD_LOG_INFO_TAGGED("libcamera", "    Max: %ux%u",
+                               size_range.max.width, size_range.max.height);
+      if (size_range.hStep != 0 || size_range.vStep != 0) {
+        SENSCORD_LOG_INFO_TAGGED("libcamera", "    Step: hStep=%u, vStep=%u",
+                                 size_range.hStep, size_range.vStep);
+      }
+
+      tmp.width_min  = size_range.min.width;
+      tmp.width_max  = size_range.max.width;
+      tmp.height_min = size_range.min.height;
+      tmp.height_max = size_range.max.height;
+      tmp.hStep      = size_range.hStep;
+      tmp.vStep      = size_range.vStep;
+
+      supported_isp_params_.push_back(tmp);
+    }
+  }
 }
 
 }  // namespace libcamera_image

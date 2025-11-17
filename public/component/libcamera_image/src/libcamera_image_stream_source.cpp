@@ -139,20 +139,6 @@ senscord::Status LibcameraImageStreamSource::Open(
     image_property_.pixel_format = senscord::kPixelFormatBGR24;
 
     {
-      status = util_->GetStreamArgument("width", &uint_value);
-      if (status.ok()) {
-        image_property_.width = static_cast<uint32_t>(uint_value);
-      }
-    }
-
-    {
-      status = util_->GetStreamArgument("height", &uint_value);
-      if (status.ok()) {
-        image_property_.height = static_cast<uint32_t>(uint_value);
-      }
-    }
-
-    {
       status = util_->GetStreamArgument("pixel_format", &string_value);
       if (status.ok()) {
         image_property_.pixel_format = string_value;
@@ -170,11 +156,6 @@ senscord::Status LibcameraImageStreamSource::Open(
     senscord::FrameRateProperty framerate_property = {};
     framerate_property.num                         = 30;
     framerate_property.denom                       = 1;
-
-    status = util_->GetStreamArgument("fps", &uint_value);
-    if (status.ok()) {
-      framerate_property.num = static_cast<uint32_t>(uint_value);
-    }
 
     Set(senscord::kFrameRatePropertyKey, &framerate_property);
   }
