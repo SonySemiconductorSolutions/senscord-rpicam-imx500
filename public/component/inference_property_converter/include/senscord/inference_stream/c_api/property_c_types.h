@@ -448,8 +448,7 @@ struct senscord_temperature_enable_property_t {
  */
 #define SENSCORD_INPUT_DATA_TYPE_PROPERTY_KEY "input_data_type_property"
 #undef SENSCORD_CHANNEL_LIST_MAX
-// #define SENSCORD_CHANNEL_LIST_MAX 8
-#define SENSCORD_CHANNEL_LIST_MAX 128
+#define SENSCORD_CHANNEL_LIST_MAX 8
 /**
  * @brief Property for input data type.
  * @see senscord::InputDataTypeProperty
