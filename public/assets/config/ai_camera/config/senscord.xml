@@ -19,7 +19,7 @@
 
     <!-- webcam image stream -->
     <stream key="inference_stream">
-      <address instanceName="libcamera_image_instance" type="image" port="0"/>
+      <address instanceName="libcamera_image_instance" type="inference" port="0"/>
       <arguments>
         <argument name="device" value="1"/>
         <argument name="pixel_format" value="image_rgb24"/>
