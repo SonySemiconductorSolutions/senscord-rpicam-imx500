@@ -8,6 +8,7 @@
 
 #include "libcamera_image_stream_source.h"
 #include "senscord/develop/standard_component.h"
+#include "senscord/inference_stream/inference_stream_types.h"
 #include "senscord/logger.h"
 
 namespace senscord {
@@ -25,7 +26,7 @@ class LibcameraImageStreamSourceFactory : public senscord::StreamSourceFactory {
    */
   virtual void GetSupportedList(const senscord::ComponentArgument &args,
                                 SourceTypeList *list) {
-    list->push_back(std::make_pair(senscord::kStreamTypeImage, 0));
+    list->push_back(std::make_pair(senscord::kStreamTypeInference, 0));
   }
 
   /**
@@ -36,7 +37,7 @@ class LibcameraImageStreamSourceFactory : public senscord::StreamSourceFactory {
    */
   virtual senscord::Status CreateSource(const SourceType &type,
                                         senscord::StreamSource **source) {
-    if (type.first == senscord::kStreamTypeImage) {
+    if (type.first == senscord::kStreamTypeInference) {
       *source = new LibcameraImageStreamSource();
     }
     return senscord::Status::OK();

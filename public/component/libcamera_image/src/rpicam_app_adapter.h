@@ -202,6 +202,8 @@ class LibcameraAdapter {
   senscord::Status SetProperty(
       const senscord::libcamera_image::AIModelBundleIdProperty *property);
   senscord::Status GetProperty(
+      senscord::libcamera_image::AIModelBundleIdProperty *property);
+  senscord::Status GetProperty(
       senscord::libcamera_image::CameraTemperatureProperty *property);
 
   senscord::Status GetAIModelVersion(std::string &ai_model_version);
@@ -219,6 +221,7 @@ class LibcameraAdapter {
   senscord::Status SetAeAntiFlickerMode(AeAntiFlickerMode mode);
   senscord::Status SetAeMetering(AeMeteringMode mode, AeMeteringWindow &window);
   senscord::Status SetManualExposureParam(uint32_t exposure_time, float gain);
+  senscord::Status GetManualExposureParam(uint32_t &exposure_time, float &gain);
   senscord::Status SetImageSize(uint32_t width, uint32_t height);
   senscord::Status SetFrameRate(uint32_t num, uint32_t denom);
   senscord::Status SetImageFlip(bool flip_horizontal, bool flip_vertical);
@@ -260,6 +263,7 @@ class LibcameraAdapter {
                                 const libcamera::ControlValue &target_value,
                                 senscord::libcamera_image::AnyValue &value);
   bool GetDeviceID(std::string &device_id_str);
+  bool GetIsRunning(void);
 
  private:
   void GetOutputTensor(CompletedRequestPtr &payload,
@@ -287,6 +291,14 @@ class LibcameraAdapter {
                 uint32_t crop_height);
   bool IsValidCropRange(uint32_t crop_left, uint32_t crop_top,
                         uint32_t crop_width, uint32_t crop_height);
+  // Validate crop range under a prospective rotation angle (degrees enum
+  // value). This is used when validating a rotation change while running:
+  // the rotated inference input size (width/height swapped for 90/270)
+  // must still fit into the configured crop. The function does not modify
+  // any members and only evaluates validity for the given rotation.
+  bool IsValidCropRangeForRotation(uint32_t crop_left, uint32_t crop_top,
+                                   uint32_t crop_width, uint32_t crop_height,
+                                   int rotation_angle);
   bool UpdateImageCrop(void);
   bool ConvertWindowToSensor(uint16_t *top, uint16_t *left, uint16_t *width,
                              uint16_t *height);
@@ -316,6 +328,14 @@ class LibcameraAdapter {
   bool ReadEvCompensation(float &ev_compensation);
   void GetSupportedIspParams(void);
   senscord::Status CheckIspParams(void);
+
+  // Helper functions for register I/O with retry logic
+  bool WriteRegisterWithVerify(uint16_t addr, uint8_t value,
+                               const char *reg_name);
+  bool WriteRegister16WithVerify(uint16_t addr, uint16_t value,
+                                 const char *reg_name);
+  bool ReadRegisterWithRetry(uint16_t addr, uint8_t &value,
+                             const char *reg_name);
 
  private:
   static const uint8_t kImx500SensorId = 0;  // IMX500 sensor celsius

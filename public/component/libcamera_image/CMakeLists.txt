@@ -49,6 +49,7 @@ add_library(${TARGET_NAME} SHARED
 target_include_directories(${TARGET_NAME} PRIVATE
   ${PROJECT_SOURCE_DIR}
   ${PROJECT_SOURCE_DIR}/include
+  ${PROJECT_SOURCE_DIR}/../inference_property_converter/include
   ${LIBCAMERA_INCLUDE_DIRS})
 
 # Ensure rpicam_app is built first and link against it directly
