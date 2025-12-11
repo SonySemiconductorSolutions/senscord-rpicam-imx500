@@ -27,22 +27,9 @@ static constexpr const char *kBlockName = "libcamera";
 
 namespace fs = std::filesystem;
 
-// Default values for camera properties initialization
 // Default frame rate (30fps)
 static constexpr uint32_t kDefaultFrameRateNum   = 30;
 static constexpr uint32_t kDefaultFrameRateDenom = 1;
-// Default exposure time values in microseconds (us)
-static constexpr uint32_t kDefaultMaxExposureTime = 10000;
-static constexpr uint32_t kDefaultMinExposureTime = 100;
-// Gain values in dB
-static constexpr float kDefaultMaxGain               = 51.0f;
-static constexpr uint32_t kDefaultConvergenceSpeed   = 2;
-static constexpr uint32_t kDefaultManualExposureTime = 10000;
-static constexpr float kDefaultManualGain            = 0.0f;
-static constexpr float kDefaultEvCompensation        = 0.0f;
-// Default window size for IMX500 sensor (full frame)
-static constexpr uint32_t kDefaultMeteringWindowWidth  = 2028;
-static constexpr uint32_t kDefaultMeteringWindowHeight = 1520;
 
 #ifndef ARGUMENT_NULL_CHECK
 #define ARGUMENT_NULL_CHECK(arg, cause)                                  \
@@ -193,39 +180,6 @@ senscord::Status LibcameraImageStreamSource::Open(
         image_property_.pixel_format = string_value;
       }
     }
-    // Ensure stride_bytes is initialized so callers (including tests) can
-    // rely on a sensible default before the camera is configured.
-    // For packed formats (rgb/bgr/jp), set stride = width * bytes_per_pixel.
-    // For planar formats, use stride = width. For greyscale, bytes_per_pixel
-    // = 1.
-    auto lower = image_property_.pixel_format;
-    for (auto &c : lower) c = static_cast<char>(::tolower(c));
-    if (lower.find("rgb24") != std::string::npos ||
-        lower.find("bgr24") != std::string::npos ||
-        (lower.find("rgb") != std::string::npos &&
-         lower.find("planar") == std::string::npos) ||
-        (lower.find("bgr") != std::string::npos &&
-         lower.find("planar") == std::string::npos)) {
-      image_property_.stride_bytes = image_property_.width * 3;
-    } else if (lower.find("planar") != std::string::npos ||
-               (lower.find("rgb8") != std::string::npos &&
-                lower.find("planar") != std::string::npos)) {
-      image_property_.stride_bytes = image_property_.width;
-    } else if (lower.find("grey") != std::string::npos ||
-               lower.find("gray") != std::string::npos) {
-      image_property_.stride_bytes = image_property_.width * 1;
-    } else if (lower.find("jp") != std::string::npos ||
-               lower.find("jpeg") != std::string::npos) {
-      // JPEG/compressed: cannot determine exact stride; fall back to width*3
-      image_property_.stride_bytes = image_property_.width * 3;
-    } else {
-      // Conservative default: assume 3 bytes per pixel
-      SENSCORD_LOG_DEBUG_TAGGED(
-          "libcamera", "Unknown pixel format '%s', using default stride",
-          image_property_.pixel_format.c_str());
-      image_property_.stride_bytes = image_property_.width * 3;
-    }
-
     util_->UpdateChannelProperty(AITRIOS_SENSOR_CHANNEL_ID_INFERENCE_RAW_IMAGE,
                                  senscord::kImagePropertyKey, &image_property_);
     // Do not treat image_property_.stride_bytes in this time, because it will
@@ -241,16 +195,6 @@ senscord::Status LibcameraImageStreamSource::Open(
 
     Set(senscord::kFrameRatePropertyKey, &framerate_property);
   }
-
-  // Initialize CameraFrameRateProperty with default value (30fps).
-  // The denominator is set to 100 for precise fractional frame rate
-  // representation.
-  const uint32_t target_denom = 100;
-  uint32_t base_num           = kDefaultFrameRateNum;
-  uint32_t base_denom         = kDefaultFrameRateDenom;
-
-  uint64_t scaled_num =
-      static_cast<uint64_t>(base_num) * target_denom / base_denom;
 
   {
     display_channel_ = AITRIOS_SENSOR_CHANNEL_ID_INFERENCE_INPUT_IMAGE;
@@ -275,186 +219,6 @@ senscord::Status LibcameraImageStreamSource::Open(
   status = adapter_.Open(device, util_, image_property_);
   if (!status.ok()) {
     util_->SendEventError(status);
-  }
-
-  // Initialize CameraImageFlipProperty with default values (no flip)
-  {
-    camera_image_flip_.flip_horizontal = false;
-    camera_image_flip_.flip_vertical   = false;
-
-    util_->UpdateChannelProperty(
-        AITRIOS_SENSOR_CHANNEL_ID_INFERENCE_RAW_IMAGE,
-        senscord::libcamera_image::kLibcameraCameraImageFlipPropertyKey,
-        &camera_image_flip_);
-    util_->SendEventPropertyUpdated(
-        senscord::libcamera_image::kLibcameraCameraImageFlipPropertyKey);
-  }
-
-  // Initialize CameraImageSizeProperty with IMX500 fixed defaults
-  {
-    senscord::libcamera_image::CameraImageSizeProperty size_prop = {};
-    camera_image_size_.width = kDefaultMeteringWindowWidth;   // IMX500 full width
-    camera_image_size_.height = kDefaultMeteringWindowHeight; // IMX500 full height
-    camera_image_size_.scaling_policy =
-        senscord::libcamera_image::kCameraScalingPolicySensitivity;
-
-    size_prop.width = camera_image_size_.width;
-    size_prop.height = camera_image_size_.height;
-    size_prop.scaling_policy = camera_image_size_.scaling_policy;
-
-    util_->UpdateChannelProperty(
-        AITRIOS_SENSOR_CHANNEL_ID_INFERENCE_RAW_IMAGE,
-        senscord::libcamera_image::kLibcameraCameraImageSizePropertykey,
-        &size_prop);
-    util_->SendEventPropertyUpdated(
-        senscord::libcamera_image::kLibcameraCameraImageSizePropertykey);
-  }
-
-  // Initialize image_crop_property using CameraImageSizeProperty value
-  {
-    image_crop_.left   = 0;
-    image_crop_.top    = 0;
-    image_crop_.width  = camera_image_size_.width;
-    image_crop_.height = camera_image_size_.height;
-
-    util_->UpdateChannelProperty(AITRIOS_SENSOR_CHANNEL_ID_INFERENCE_RAW_IMAGE,
-                                 senscord::kImageCropPropertyKey, &image_crop_);
-    util_->SendEventPropertyUpdated(senscord::kImageCropPropertyKey);
-  }
-
-  // Initialize CameraFrameRateProperty
-  {
-    senscord::libcamera_image::CameraFrameRateProperty cam_rate = {};
-    uint32_t num                                                = 0;
-    if (scaled_num > 0) {
-      num = static_cast<uint32_t>(scaled_num);
-    } else {
-      num = 2997;  // default to 29.97fps
-    }
-    cam_rate.num   = num;
-    cam_rate.denom = target_denom;
-
-    camera_frame_rate_ = cam_rate;
-
-    util_->UpdateChannelProperty(
-        AITRIOS_SENSOR_CHANNEL_ID_INFERENCE_RAW_IMAGE,
-        senscord::libcamera_image::kLibcameraCameraFrameRatePropertykey,
-        &camera_frame_rate_);
-    util_->SendEventPropertyUpdated(
-        senscord::libcamera_image::kLibcameraCameraFrameRatePropertykey);
-  }
-
-  // Initialize ai_model_bundle_id_ from adapter so Get() after Open() returns
-  // the adapter's current value without requiring an explicit Set() call.
-  {
-    senscord::libcamera_image::AIModelBundleIdProperty bundle_prop = {};
-    senscord::Status gs = adapter_.GetProperty(&bundle_prop);
-    if (gs.ok()) {
-      memcpy(ai_model_bundle_id_.ai_model_bundle_id,
-             bundle_prop.ai_model_bundle_id,
-             senscord::libcamera_image::kAIModelBundleIdLength);
-      util_->SendEventPropertyUpdated(
-          senscord::libcamera_image::kLibcameraAIModelBundleIdPropertyKey);
-    } else {
-      SENSCORD_LOG_INFO_TAGGED("libcamera",
-                               "AIModelBundleId not available at Open(): %s",
-                               gs.ToString().c_str());
-    }
-  }
-  // Initialize CameraExposureModeProperty
-  {
-    util_->UpdateChannelProperty(
-        AITRIOS_SENSOR_CHANNEL_ID_INFERENCE_RAW_IMAGE,
-        senscord::libcamera_image::kLibcameraCameraExposureModePropertyKey,
-        &camera_exposure_mode_);
-    util_->SendEventPropertyUpdated(
-        senscord::libcamera_image::kLibcameraCameraExposureModePropertyKey);
-  }
-
-  // Initialize CameraAutoExposureProperty
-  {
-    camera_auto_exposure_.max_exposure_time = kDefaultMaxExposureTime;
-    camera_auto_exposure_.min_exposure_time = kDefaultMinExposureTime;
-    camera_auto_exposure_.max_gain          = kDefaultMaxGain;
-    camera_auto_exposure_.convergence_speed = kDefaultConvergenceSpeed;
-
-    util_->UpdateChannelProperty(
-        AITRIOS_SENSOR_CHANNEL_ID_INFERENCE_RAW_IMAGE,
-        senscord::libcamera_image::kLibcameraCameraAutoExposurePropertyKey,
-        &camera_auto_exposure_);
-    util_->SendEventPropertyUpdated(
-        senscord::libcamera_image::kLibcameraCameraAutoExposurePropertyKey);
-
-    senscord::Status s_ae = adapter_.SetAutoExposureParam(
-        camera_auto_exposure_.max_exposure_time,
-        camera_auto_exposure_.min_exposure_time, camera_auto_exposure_.max_gain,
-        camera_auto_exposure_.convergence_speed);
-    if (!s_ae.ok()) {
-      SENSCORD_LOG_INFO_TAGGED("libcamera",
-                               "SetAutoExposureParam not applied at Open(): %s",
-                               s_ae.ToString().c_str());
-    }
-  }
-
-  // Initialize CameraEvCompensationProperty
-  {
-    senscord::libcamera_image::CameraEvCompensationProperty ev_prop = {};
-    ev_prop.ev_compensation = kDefaultEvCompensation;
-    util_->UpdateChannelProperty(
-        AITRIOS_SENSOR_CHANNEL_ID_INFERENCE_RAW_IMAGE,
-        senscord::libcamera_image::kLibcameraCameraEvCompensationPropertyKey,
-        &ev_prop);
-    util_->SendEventPropertyUpdated(
-        senscord::libcamera_image::kLibcameraCameraEvCompensationPropertyKey);
-
-    senscord::Status s_ev =
-        adapter_.SetAeEvCompensation(ev_prop.ev_compensation);
-    if (!s_ev.ok()) {
-      SENSCORD_LOG_INFO_TAGGED("libcamera",
-                               "SetAeEvCompensation not applied at Open(): %s",
-                               s_ev.ToString().c_str());
-    }
-  }
-
-  // Initialize CameraAntiFlickerModeProperty
-  {
-    camera_anti_flicker_mode_.anti_flicker_mode = kCameraAntiFlickerModeOff;
-    util_->UpdateChannelProperty(
-        AITRIOS_SENSOR_CHANNEL_ID_INFERENCE_RAW_IMAGE,
-        senscord::libcamera_image::kLibcameraCameraAntiFlickerModePropertyKey,
-        &camera_anti_flicker_mode_);
-    util_->SendEventPropertyUpdated(
-        senscord::libcamera_image::kLibcameraCameraAntiFlickerModePropertyKey);
-  }
-
-  // Initialize CameraManualExposureProperty
-  {
-    camera_manual_exposure_.exposure_time = kDefaultManualExposureTime;
-    camera_manual_exposure_.gain          = kDefaultManualGain;
-    util_->UpdateChannelProperty(
-        AITRIOS_SENSOR_CHANNEL_ID_INFERENCE_RAW_IMAGE,
-        senscord::libcamera_image::kLibcameraCameraManualExposurePropertykey,
-        &camera_manual_exposure_);
-    util_->SendEventPropertyUpdated(
-        senscord::libcamera_image::kLibcameraCameraManualExposurePropertykey);
-  }
-
-  // Initialize CameraAutoExposureMeteringProperty
-  {
-    camera_auto_exposure_metering_.mode =
-        senscord::libcamera_image::kCameraAutoExposureMeteringModeFullScreen;
-    camera_auto_exposure_metering_.window.top    = 0;
-    camera_auto_exposure_metering_.window.left   = 0;
-    camera_auto_exposure_metering_.window.bottom = kDefaultMeteringWindowHeight;
-    camera_auto_exposure_metering_.window.right  = kDefaultMeteringWindowWidth;
-    util_->UpdateChannelProperty(
-        AITRIOS_SENSOR_CHANNEL_ID_INFERENCE_RAW_IMAGE,
-        senscord::libcamera_image::
-            kLibcameraCameraAutoExposureMeteringPropertykey,
-        &camera_auto_exposure_metering_);
-    util_->SendEventPropertyUpdated(
-        senscord::libcamera_image::
-            kLibcameraCameraAutoExposureMeteringPropertykey);
   }
 
   // Set Input Tensor channel info
@@ -1092,19 +856,6 @@ senscord::Status LibcameraImageStreamSource::Set(
 
   CameraAutoExposureProperty camera_auto_exposure = *property;
 
-  // Validate exposure time values are positive
-  if (camera_auto_exposure.max_exposure_time == 0) {
-    return SENSCORD_STATUS_FAIL("libcamera",
-                                senscord::Status::kCauseInvalidArgument,
-                                "max_exposure_time must be greater than 0");
-  }
-
-  if (camera_auto_exposure.min_exposure_time == 0) {
-    return SENSCORD_STATUS_FAIL("libcamera",
-                                senscord::Status::kCauseInvalidArgument,
-                                "min_exposure_time must be greater than 0");
-  }
-
   // Validate max >= min
   if (camera_auto_exposure.max_exposure_time <
       camera_auto_exposure.min_exposure_time) {
@@ -1130,7 +881,6 @@ senscord::Status LibcameraImageStreamSource::Set(
     util_->SendEventError(status);
     return status;
   }
-  camera_auto_exposure_ = camera_auto_exposure;
 
   return senscord::Status::OK();
 }
