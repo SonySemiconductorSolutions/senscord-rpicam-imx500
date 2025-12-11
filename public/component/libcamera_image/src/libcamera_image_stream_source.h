@@ -398,7 +398,6 @@ class LibcameraImageStreamSource : public senscord::ImageStreamSource {
   CameraAntiFlickerModeProperty camera_anti_flicker_mode_;
   CameraManualExposureProperty camera_manual_exposure_;
   CameraAutoExposureMeteringProperty camera_auto_exposure_metering_;
-  CameraAutoExposureProperty camera_auto_exposure_;
   CameraImageFlipProperty camera_image_flip_;
   CameraImageSizeProperty camera_image_size_;
   CameraFrameRateProperty camera_frame_rate_;

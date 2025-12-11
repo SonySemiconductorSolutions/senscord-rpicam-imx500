@@ -1,13 +1,10 @@
 # DevContainer for Unit Tests
-FROM ubuntu:22.04
+FROM ubuntu:24.04
 
 # Define build arguments and environment variables for maintainability
 ARG CMAKE_VERSION=3.31.6
 ARG NODE_VERSION=20.x
 ARG ALLURE_VERSION=2.34.1
-ARG DEV_USER=devuser
-ARG DEV_UID=1000
-ARG DEV_GID=1000
 
 # Set non-interactive mode, timezone, and locale
 ENV DEBIAN_FRONTEND=noninteractive \
@@ -16,10 +13,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     LC_ALL=C.UTF-8 \
     CMAKE_VERSION=${CMAKE_VERSION} \
     NODE_VERSION=${NODE_VERSION} \
-    ALLURE_VERSION=${ALLURE_VERSION} \
-    DEV_USER=${DEV_USER} \
-    DEV_UID=${DEV_UID} \
-    DEV_GID=${DEV_GID}
+    ALLURE_VERSION=${ALLURE_VERSION}
 
 # Install all apt packages in one layer to optimize caching and size
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone \
@@ -28,8 +22,8 @@ RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone \
         # Build essentials
         build-essential \
         pkg-config \
-        gcc-11 \
-        g++-11 \
+        gcc-13 \
+        g++-13 \
         # Network and download tools
         curl \
         wget \
@@ -43,14 +37,32 @@ RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone \
         # Locale support
         locales \
         # Testing frameworks
-        lcov \
         libgtest-dev \
         libgmock-dev \
-        # Java runtime
+        # Perl modules for LCOV 2.1
+        libcapture-tiny-perl \
+        libdatetime-perl \
+        libtimedate-perl \
+        libgd-perl \
+        libjson-xs-perl \
+        # Java runtime (required for Allure)
         openjdk-11-jre \
+        # Image processing libraries (required for JPEG compression in rpicam_app_adapter.cpp)
+        libjpeg-dev \
+        # JSON library (required for rpicam_app_adapter JSON parsing)
+        nlohmann-json3-dev \
+        # Boost library (required for rpicam-apps command-line options)
+        libboost-program-options-dev \
+        # XML library (required for senscord OSAL)
+        libxml2-dev \
+        # MessagePack library (required for senscord serialization)
+        libmsgpack-dev \
+        # Development tools (optional but useful)
+        gdb \
+        tree \
     # Set GCC alternatives
-    && update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-11 100 \
-    && update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-11 100 \
+    && update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-13 100 \
+    && update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-13 100 \
     # Configure locale
     && locale-gen en_US.UTF-8 \
     && update-locale LANG=en_US.UTF-8 \
@@ -64,6 +76,14 @@ RUN wget https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/cm
     && tar -xzf cmake-${CMAKE_VERSION}-linux-x86_64.tar.gz -C /usr/local --strip-components=1 \
     && rm cmake-${CMAKE_VERSION}-linux-x86_64.tar.gz
 
+# Install LCOV 2.1 from source (for exception branch exclusion support)
+RUN wget -q https://github.com/linux-test-project/lcov/releases/download/v2.1/lcov-2.1.tar.gz \
+    && tar -xzf lcov-2.1.tar.gz \
+    && cd lcov-2.1 \
+    && make install PREFIX=/usr/local \
+    && cd .. \
+    && rm -rf lcov-2.1 lcov-2.1.tar.gz
+
 # Install Node.js and Allure in one layer using environment variables
 RUN curl -fsSL https://deb.nodesource.com/setup_${NODE_VERSION} | bash - \
     && apt-get install -y --no-install-recommends nodejs \
@@ -71,23 +91,22 @@ RUN curl -fsSL https://deb.nodesource.com/setup_${NODE_VERSION} | bash - \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Create a non-root user with sudo privileges using environment variables
-RUN groupadd --gid ${DEV_GID} ${DEV_USER} \
-    && useradd --uid ${DEV_UID} --gid ${DEV_GID} -m -s /bin/bash ${DEV_USER} \
-    && echo "${DEV_USER} ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
+# Configure the default ubuntu user (UID=1000, GID=1000) with sudo privileges
+# Ubuntu 24.04 base image already has this user, so we just configure it
+RUN echo "ubuntu ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
 
 # Set working directory
 WORKDIR /workspace
 
-# Change ownership of workspace to development user
-RUN chown -R ${DEV_USER}:${DEV_USER} /workspace
-
-# Switch to development user
-USER ${DEV_USER}
+# Switch to ubuntu user
+USER ubuntu
 
 # Configure bash environment for test development
 RUN echo "# Auto-navigate to test directory" >> ~/.bashrc \
     && echo "cd /workspace/test/scripts" >> ~/.bashrc \
+    && echo "" >> ~/.bashrc \
+    && echo "# Use LCOV 2.1 from /usr/local/bin" >> ~/.bashrc \
+    && echo 'export PATH="/usr/local/bin:$PATH"' >> ~/.bashrc \
     && echo "" >> ~/.bashrc \
     && echo "# Unit Test Environment Welcome Message" >> ~/.bashrc \
     && echo "echo '📋 Unit Test Environment Ready!'" >> ~/.bashrc \

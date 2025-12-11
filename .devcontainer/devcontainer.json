@@ -8,6 +8,6 @@
     "LC_ALL": "C.UTF-8"
   },
   "postCreateCommand": "echo 'Dev Container setup completed!'",
-  "remoteUser": "devuser",
+  "remoteUser": "ubuntu",
   "init": true
 }

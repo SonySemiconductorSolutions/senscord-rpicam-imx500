@@ -67,11 +67,6 @@ constexpr uint32_t kConvergenceSpeedDivisor = 0x0400;
 constexpr int kRegisterRetries      = 3;
 constexpr int kRegisterRetryDelayUs = 20000;  // 20ms
 
-// AI model version constant for IT-only mode
-// On Raspberry Pi builds with "it-only" bundle ID, return "0" for
-// compatibility with inference_stream test expectations
-constexpr const char *kAIModelVersionItOnly = "0";
-
 // Helper functions for 16-bit register I/O with big-endian byte order
 // IMX500 registers use MSB-first (big-endian) byte order
 inline uint16_t ReadBigEndian16(const uint8_t *bytes) {
@@ -354,7 +349,6 @@ void LibcameraAdapter::InitializeOptions(Options *&options) {
   options_->preview_y      = 0;
   options_->preview_width  = 0;
   options_->preview_height = 0;
-  // options_->transform      = libcamera::Transform::Identity;
   // options_->transform;                 // No default
   std::string roi      = "0,0,0,0";
   options_->roi_x      = 0.0f;
@@ -1431,11 +1425,8 @@ senscord::Status LibcameraAdapter::GetAIModelVersion(
   }
 
   if (CheckBundleIdItOnly(ai_model_bundle_id_)) {
-    // On Raspberry Pi builds the component uses an "it-only" bundle id by
-    // default. For compatibility with the inference_stream test expectations
-    // return a short version string instead of the full converter id
-    // format used elsewhere.
-    ai_model_version = kAIModelVersionItOnly;
+    ai_model_version = MODEL_ID_CONVERTER_VERSION_IT_ONLY +
+                       ai_model_bundle_id_ + MODEL_ID_VERSION_NUMBER_IT_ONLY;
   } else {
     std::string file_name;
     std::string rpk_path = GetRpkPath(j_str);
@@ -3104,27 +3095,20 @@ bool LibcameraAdapter::SetMinExposureTime(void) {
   }
 
   uint8_t shtminline;
-  double raw = ((double)(auto_exposure_.min_exposure_time) * 1000.0) /
-               (double)time_per_h;
-  // Truncate (to match test expectations)
-  uint32_t truncated = static_cast<uint32_t>(raw);
-  if (truncated == 0) {
-    // Avoid writing zero which yields min_exposure_time == 0
-    truncated = 1;
-  }
-  if (truncated > 0xFF) {
+  double value = ((double)(auto_exposure_.min_exposure_time) * 1000.0) /
+                 (double)time_per_h;
+  if (value < 0.0) {
+    shtminline = 0;
+  } else if (value > 0xFF) {
     shtminline = 0xFF;
   } else {
-    shtminline = static_cast<uint8_t>(truncated);
+    shtminline = static_cast<uint8_t>(value);
   }
 
   SENSCORD_LOG_DEBUG_TAGGED(
       "libcamera",
-      "SetMinExposureTime: time_per_h=%u raw=%f truncated=%u shtminline=%u",
-      time_per_h, raw, truncated, shtminline);
-
-  // Small delay to allow related registers to settle
-  usleep(5000);
+      "SetMinExposureTime: time_per_h=%u shtminline=%u",
+      time_per_h, shtminline);
 
   if (!WriteRegisterWithVerify(kRegShtminline, shtminline, "SHTMINLINE")) {
     return false;
@@ -3155,6 +3139,10 @@ bool LibcameraAdapter::SetMaxGain(void) {
 
 bool LibcameraAdapter::SetConvergenceSpeed(void) {
   senscord::Status status;
+
+  if (auto_exposure_.convergence_speed == 0) {
+    auto_exposure_.convergence_speed = 1;
+  }
 
   uint16_t errscllmit;
   uint32_t value = 0x0400 / auto_exposure_.convergence_speed;
