@@ -83,27 +83,28 @@ senscord::Status SensorRegister::ReadRegister(const uint16_t reg,
                                 senscord::Status::kCauseInvalidOperation,
                                 "Sensor(I2C) Device not opened.");
   }
-  if (len < 1) {
+  if (len != 1 && len != 2 && len != 4) {
     return SENSCORD_STATUS_FAIL("libcamera",
                                 senscord::Status::kCauseInvalidArgument,
-                                "Length must be 1 or more.");
-  }
-  if (len > kBufLimit) {  // I2C buffer size limitation
-    SENSCORD_LOG_ERROR_TAGGED("libcamera", "I2C read size exceeded: %zu", len);
-    return SENSCORD_STATUS_FAIL("libcamera",
-                                senscord::Status::kCauseInvalidOperation,
-                                "I2C buffer size exceeded.");
+                                "Length must be 1, 2, or 4 bytes.");
   }
 
   uint8_t buf[kRegAddrSize];
   buf[0] = static_cast<uint8_t>((reg & 0xFF00U) >> 8U);
   buf[1] = static_cast<uint8_t>(reg & 0x00FFU);
 
+  uint8_t temp_buf[kMaxDataSize];
   for (int attempt = 0; attempt < kI2cRetries; ++attempt) {
     ssize_t r_size = write(handle_, buf, kRegAddrSize);
     if ((r_size >= 0) && (static_cast<signed>(r_size) == kRegAddrSize)) {
-      r_size = read(handle_, value, len);
+      r_size = read(handle_, temp_buf, len);
       if ((r_size >= 0) && (static_cast<size_t>(r_size) == len)) {
+        // Convert from big-endian (MSB first) to host byte order
+        uint32_t val = 0;
+        for (size_t i = 0; i < len; i++) {
+          val = (val << 8) | temp_buf[i];
+        }
+        memcpy(value, &val, len);
         return senscord::Status::OK();
       }
     }
@@ -127,26 +128,23 @@ senscord::Status SensorRegister::WriteRegister(const uint16_t reg,
                                 senscord::Status::kCauseInvalidOperation,
                                 "Sensor(I2C) Device not opened.");
   }
-  if (len < 1) {
+  if (len != 1 && len != 2 && len != 4) {
     return SENSCORD_STATUS_FAIL("libcamera",
                                 senscord::Status::kCauseInvalidArgument,
-                                "Length must be 1 or more.");
+                                "Length must be 1, 2, or 4 bytes.");
   }
 
-  size_t reg_len = kRegAddrSize + len;
-  if (reg_len > kBufLimit) {  // I2C buffer size limitation
-    SENSCORD_LOG_ERROR_TAGGED("libcamera", "I2C write size exceeded: %zu",
-                              reg_len);
-    return SENSCORD_STATUS_FAIL("libcamera",
-                                senscord::Status::kCauseInvalidOperation,
-                                "I2C buffer size exceeded.");
-  }
+  uint8_t buf[kRegAddrSize + kMaxDataSize];
+  buf[0]               = static_cast<uint8_t>((reg & 0xFF00U) >> 8U);
+  buf[1]               = static_cast<uint8_t>(reg & 0x00FFU);
+  const size_t reg_len = kRegAddrSize + len;
 
-  uint8_t buf[reg_len];
-  buf[0] = static_cast<uint8_t>((reg & 0xFF00U) >> 8U);
-  buf[1] = static_cast<uint8_t>(reg & 0x00FFU);
+  // Convert from host byte order to big-endian (MSB first)
+  uint32_t val = 0;
+  memcpy(&val, value, len);
   for (size_t i = 0; i < len; i++) {
-    buf[kRegAddrSize + i] = value[i];
+    buf[kRegAddrSize + i] =
+        static_cast<uint8_t>((val >> (8 * (len - 1 - i))) & 0xFF);
   }
 
   for (int attempt = 0; attempt < kI2cRetries; ++attempt) {

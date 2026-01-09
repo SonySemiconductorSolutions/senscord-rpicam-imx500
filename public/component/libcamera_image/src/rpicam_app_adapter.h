@@ -25,7 +25,7 @@
 #define AITRIOS_SENSOR_CHANNEL_ID_INFERENCE_RAW_IMAGE   (0x80000000)
 #define IMX500_FULL_RESOLUTION_WIDTH                    (4056)
 #define IMX500_FULL_RESOLUTION_HEIGHT                   (3040)
-#define MAX_NUM_DROP_FRAMES                             (7)
+#define MAX_NUM_DROP_FRAMES                             (20)
 #define AE_FLICKER_PERIOD_50HZ                          ("20000us")
 #define AE_FLICKER_PERIOD_60HZ                          ("16667us")
 #define CAMERA_IMAGE_WIDTH_DEFAULT                      (2028) /* pixel */
@@ -287,6 +287,8 @@ class LibcameraAdapter {
   bool ReadInputTensorSize(const std::string &post_process_file);
   uint32_t ConvertHorizontalToSensor(uint32_t target);
   uint32_t ConvertVerticalToSensor(uint32_t target);
+  void UpdateIspManualModeOff(void);
+  void InitializeWhiteBalanceParam(void);
   bool IsNoCrop(uint32_t crop_left, uint32_t crop_top, uint32_t crop_width,
                 uint32_t crop_height);
   bool IsValidCropRange(uint32_t crop_left, uint32_t crop_top,
@@ -330,10 +332,6 @@ class LibcameraAdapter {
   senscord::Status CheckIspParams(void);
 
   // Helper functions for register I/O with retry logic
-  bool WriteRegisterWithVerify(uint16_t addr, uint8_t value,
-                               const char *reg_name);
-  bool WriteRegister16WithVerify(uint16_t addr, uint16_t value,
-                                 const char *reg_name);
   bool ReadRegisterWithRetry(uint16_t addr, uint8_t &value,
                              const char *reg_name);
 
@@ -391,8 +389,6 @@ class LibcameraAdapter {
   AeMeteringMode ae_metering_mode_;
   AeMeteringWindow ae_metering_window_;
   float ev_compensation_;
-  bool is_set_ae_param_;
-  bool is_set_ev_compensation_;
   std::vector<float> ev_array_ = {0.0f, 0.25f, 0.5f, 0.75f, 1.0f, 1.25f, 1.5f};
   std::vector<SupportedIspParam> supported_isp_params_;
 

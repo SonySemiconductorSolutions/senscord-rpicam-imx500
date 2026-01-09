@@ -67,7 +67,12 @@ static inline void SafeStringCopy(char *dest, size_t dest_size,
 const uint64_t LibcameraImageStreamSource::kWaitOnGetFrames = 4'000'000;
 
 LibcameraImageStreamSource::LibcameraImageStreamSource()
-    : imx500_device_id_("") {
+    : imx500_device_id_(""),
+      image_crop_{0, 0, 0, 0},
+      cached_image_crop_{0, 0, 0, 0},
+      camera_image_size_{CAMERA_IMAGE_WIDTH_DEFAULT,
+                         CAMERA_IMAGE_HEIGHT_DEFAULT,
+                         kCameraScalingPolicySensitivity} {
   camera_exposure_mode_.mode = KCameraExposureModeAuto;
 }
 
@@ -233,6 +238,17 @@ senscord::Status LibcameraImageStreamSource::Open(
   util_->UpdateChannelProperty(AITRIOS_SENSOR_CHANNEL_ID_INFERENCE_RAW_IMAGE,
                                senscord::kImagePropertyKey, &image_property_);
 
+  // Initialize image_crop_ with default values (full image size)
+  image_crop_.left   = 0;
+  image_crop_.top    = 0;
+  image_crop_.width  = camera_image_size_.width;
+  image_crop_.height = camera_image_size_.height;
+  // Initialize cache to invalid state to force first update
+  cached_image_crop_.left   = 0;
+  cached_image_crop_.top    = 0;
+  cached_image_crop_.width  = 0;
+  cached_image_crop_.height = 0;
+
   // get device_id
   if (imx500_device_id_.empty()) {
     if (!GetDeviceID()) {
@@ -266,6 +282,13 @@ senscord::Status LibcameraImageStreamSource::Start() {
   senscord::Status status;
 
   std::unique_lock<std::mutex> _lck(device_id_mutex_);
+
+  // Reset property cache to ensure properties are updated on first frame
+  // after stream_start
+  cached_image_crop_.left   = 0;
+  cached_image_crop_.top    = 0;
+  cached_image_crop_.width  = 0;
+  cached_image_crop_.height = 0;
 
   // Apply initial frame rate property first, before image property.
   // The frame rate must be set before Configure() is called (which happens
@@ -321,6 +344,17 @@ void LibcameraImageStreamSource::GetFrames(
   if (frames->empty()) {
     // Sleep to avoid busy loop
     senscord::osal::OSSleep(kWaitOnGetFrames);
+  } else {
+    // Update ImageCropProperty only if changed
+    if (image_crop_.left != cached_image_crop_.left ||
+        image_crop_.top != cached_image_crop_.top ||
+        image_crop_.width != cached_image_crop_.width ||
+        image_crop_.height != cached_image_crop_.height) {
+      util_->UpdateChannelProperty(senscord::kChannelIdImage(0),
+                                   senscord::kImageCropPropertyKey,
+                                   &image_crop_);
+      cached_image_crop_ = image_crop_;
+    }
   }
 }
 
@@ -335,6 +369,7 @@ senscord::Status LibcameraImageStreamSource::ReleaseFrame(
 senscord::Status LibcameraImageStreamSource::Get(
     const std::string &key, senscord::ChannelInfoProperty *property) {
   ARGUMENT_NULL_CHECK(property, InvalidArgument);
+  property->channels.clear();
   SENSCORD_LOG_DEBUG_TAGGED(
       "libcamera", "LibcameraImageStreamSource::Get(ChannelInfoProperty)");
 
