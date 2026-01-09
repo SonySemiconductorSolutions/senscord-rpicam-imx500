@@ -58,7 +58,10 @@ constexpr float kGainUnitConversion = 0.3f;  // dB
 
 // Exposure mode constants
 // Manual exposure mode index in rpicam-apps options
-constexpr int kManualExposureIndex = 4;
+constexpr int kManualExposureIndex = 3;
+
+// Auto white balance constants
+constexpr int kAwbDisabledIndex = 7;  // AWB disabled mode index
 
 // Auto exposure convergence speed calculation constant
 constexpr uint32_t kConvergenceSpeedDivisor = 0x0400;
@@ -66,17 +69,6 @@ constexpr uint32_t kConvergenceSpeedDivisor = 0x0400;
 // Number of retries for register I/O operations
 constexpr int kRegisterRetries      = 3;
 constexpr int kRegisterRetryDelayUs = 20000;  // 20ms
-
-// Helper functions for 16-bit register I/O with big-endian byte order
-// IMX500 registers use MSB-first (big-endian) byte order
-inline uint16_t ReadBigEndian16(const uint8_t *bytes) {
-  return (static_cast<uint16_t>(bytes[0]) << 8) | bytes[1];
-}
-
-inline void WriteBigEndian16(uint8_t *bytes, uint16_t value) {
-  bytes[0] = static_cast<uint8_t>((value >> 8) & 0xFF);
-  bytes[1] = static_cast<uint8_t>(value & 0xFF);
-}
 
 template <typename T>
 senscord::Status convertValue(const libcamera::ControlValue &target_value,
@@ -142,15 +134,14 @@ LibcameraAdapter::LibcameraAdapter()
       image_flip_{false, false},
       image_crop_{0, 0, CAMERA_IMAGE_WIDTH_DEFAULT,
                   CAMERA_IMAGE_HEIGHT_DEFAULT},
+      exposure_mode_(kExposureModeParamAuto),
       ae_metering_mode_(kAeMeteringFullScreen),
       ae_metering_window_{0, 0, IMX500_FULL_RESOLUTION_HEIGHT,
                           IMX500_FULL_RESOLUTION_WIDTH},
       no_image_crop_{true},
       is_running_(false),
-      is_set_ae_param_(false),
-      is_set_ev_compensation_(false),
-      auto_exposure_{0, 0, 0.0f, 0},
-      ev_compensation_(1.0f) {}
+      auto_exposure_{10000, 100, 51.0f, 2},
+      ev_compensation_(0.0f) {}
 LibcameraAdapter::~LibcameraAdapter() {}
 
 senscord::Status LibcameraAdapter::Open(
@@ -158,7 +149,6 @@ senscord::Status LibcameraAdapter::Open(
     senscord::ImageProperty &image_property) {
   std::lock_guard<std::mutex> lock(LibcameraAdapter::mutex_camera_manager_);
 
-  exposure_mode_                 = kExposureModeParamAuto;
   manual_exposure_.keep          = false;
   manual_exposure_.exposure_time = 0;
   manual_exposure_.gain          = 0.0;
@@ -542,6 +532,18 @@ senscord::Status LibcameraAdapter::Configure(
   } else {
     options_->transform = libcamera::Transform::Identity;
   }
+
+  if (exposure_mode_ == kExposureModeParamAuto) {
+    /* Disable AE and AWB in libcamera. */
+    std::string shutter_str = "10000us";
+    options_->shutter.set(shutter_str);
+    options_->gain = 1.0f;
+  }
+
+  /* Disable AWB in libcamera. */
+  options_->awb_index  = kAwbDisabledIndex;
+  options_->awb_gain_r = 1.0f;
+  options_->awb_gain_b = 1.0f;
 
   std::unique_ptr<libcamera::CameraConfiguration> config =
       camera_->generateConfiguration({libcamera::StreamRole::Raw});
@@ -1043,6 +1045,8 @@ void LibcameraAdapter::GetFrames(std::vector<senscord::FrameInfo> *frames,
         frames are discarded for AE/AWB, so images without rotation are not
         notified to higher layers.
       */
+      UpdateIspManualModeOff();
+      InitializeWhiteBalanceParam();
       UpdateImageRotationProperty();
       UpdateAeMetering();
       UpdateAutoExposureParam();
@@ -1504,8 +1508,6 @@ senscord::Status LibcameraAdapter::SetAutoExposureParam(
   auto_exposure_.max_gain          = max_gain;
   auto_exposure_.convergence_speed = convergence_speed;
 
-  is_set_ae_param_ = true;
-
   if (reg_handle_.IsEnableAccess()) {
     if (!UpdateAutoExposureParam()) {
       return SENSCORD_STATUS_FAIL("libcamera",
@@ -1538,8 +1540,6 @@ senscord::Status LibcameraAdapter::GetAutoExposureParam(
 
 senscord::Status LibcameraAdapter::SetAeEvCompensation(float &ev_compensation) {
   ev_compensation_ = ev_compensation;
-
-  is_set_ev_compensation_ = true;
 
   if (reg_handle_.IsEnableAccess()) {
     if (!UpdateEvCompensation()) {
@@ -2552,6 +2552,126 @@ bool LibcameraAdapter::GetDeviceID(std::string &device_id_str) {
   return true;
 }
 
+void LibcameraAdapter::UpdateIspManualModeOff(void) {
+  if (exposure_mode_ != kExposureModeParamAuto) {
+    SENSCORD_LOG_INFO(
+        "ISP manual mode is not turned off because exposure mode is not auto");
+    return;
+  }
+
+  senscord::Status status =
+      reg_handle_.WriteRegister(kRegIspManualMode, &kIspManualModeOff);
+  if (!status.ok()) {
+    SENSCORD_LOG_ERROR_TAGGED("libcamera",
+                              "Failed to write ISP manual mode register");
+  }
+}
+
+void LibcameraAdapter::InitializeWhiteBalanceParam(void) {
+  senscord::Status status;
+
+  // Set AWB mode to auto
+  uint8_t awb_auto_mode = kAwbAutoMode;
+  status = reg_handle_.WriteRegister(kRegAwbModeS1, &awb_auto_mode);
+  if (!status.ok()) {
+    SENSCORD_LOG_ERROR_TAGGED("libcamera", "Failed to write AWB mode register");
+  }
+
+  // User gains settings
+  uint16_t user0_gain_r = kUser0GainR;
+  uint16_t user0_gain_b = kUser0GainB;
+  uint16_t user1_gain_r = kUser1GainR;
+  uint16_t user1_gain_b = kUser1GainB;
+  uint16_t user2_gain_r = kUser2GainR;
+  uint16_t user2_gain_b = kUser2GainB;
+  uint16_t user3_gain_r = kUser3GainR;
+  uint16_t user3_gain_b = kUser3GainB;
+  status = reg_handle_.WriteRegister(kRegAwbUser0R, (uint8_t *)(&user0_gain_r),
+                                     sizeof(user0_gain_r));
+  if (!status.ok()) {
+    SENSCORD_LOG_ERROR_TAGGED("libcamera", "Failed to write kRegAwbUser0R");
+  }
+  status = reg_handle_.WriteRegister(kRegAwbUser0B, (uint8_t *)(&user0_gain_b),
+                                     sizeof(user0_gain_b));
+  if (!status.ok()) {
+    SENSCORD_LOG_ERROR_TAGGED("libcamera", "Failed to write kRegAwbUser0B");
+  }
+  status = reg_handle_.WriteRegister(kRegAwbUser1R, (uint8_t *)(&user1_gain_r),
+                                     sizeof(user1_gain_r));
+  if (!status.ok()) {
+    SENSCORD_LOG_ERROR_TAGGED("libcamera", "Failed to write kRegAwbUser1R");
+  }
+  status = reg_handle_.WriteRegister(kRegAwbUser1B, (uint8_t *)(&user1_gain_b),
+                                     sizeof(user1_gain_b));
+  if (!status.ok()) {
+    SENSCORD_LOG_ERROR_TAGGED("libcamera", "Failed to write kRegAwbUser1B");
+  }
+  status = reg_handle_.WriteRegister(kRegAwbUser2R, (uint8_t *)(&user2_gain_r),
+                                     sizeof(user2_gain_r));
+  if (!status.ok()) {
+    SENSCORD_LOG_ERROR_TAGGED("libcamera", "Failed to write kRegAwbUser2R");
+  }
+  status = reg_handle_.WriteRegister(kRegAwbUser2B, (uint8_t *)(&user2_gain_b),
+                                     sizeof(user2_gain_b));
+  if (!status.ok()) {
+    SENSCORD_LOG_ERROR_TAGGED("libcamera", "Failed to write kRegAwbUser2B");
+  }
+  status = reg_handle_.WriteRegister(kRegAwbUser3R, (uint8_t *)(&user3_gain_r),
+                                     sizeof(user3_gain_r));
+  if (!status.ok()) {
+    SENSCORD_LOG_ERROR_TAGGED("libcamera", "Failed to write kRegAwbUser3R");
+  }
+  status = reg_handle_.WriteRegister(kRegAwbUser3B, (uint8_t *)(&user3_gain_b),
+                                     sizeof(user3_gain_b));
+  if (!status.ok()) {
+    SENSCORD_LOG_ERROR_TAGGED("libcamera", "Failed to write kRegAwbUser3B");
+  }
+
+  // AWB convergence speed settings
+  uint8_t idx = 0;
+  for (idx = (AWB_CONVERGENCE_SPEED_NUM - 1); idx > 0; --idx) {
+    if (kAwbConvergenceSpeed >= kAwbConvergenceSpeedValue[idx]) {
+      break;
+    }
+  }
+  SENSCORD_LOG_DEBUG("set ATW_GAINS_IN_MONI and ATW_GAINS_IN_NR_MONI to 0x%X",
+                     (uint8_t)(idx + 1));
+
+  uint8_t gain_step = (uint8_t)(idx + 1);
+  status            = reg_handle_.WriteRegister(kRegAtwGainsInMoni, &gain_step);
+  if (!status.ok()) {
+    SENSCORD_LOG_ERROR_TAGGED("libcamera",
+                              "Failed to write kRegAtwGainsInMoni");
+  }
+  status = reg_handle_.WriteRegister(kRegAtwGainsInNrMoni, &gain_step);
+  if (!status.ok()) {
+    SENSCORD_LOG_ERROR_TAGGED("libcamera",
+                              "Failed to write kRegAtwGainsInNrMoni");
+  }
+
+  // OPD AWB settings
+  uint8_t opd_awb_mode = kOpdAwbMode;
+  status = reg_handle_.WriteRegister(kRegOpdAwbMode, &opd_awb_mode);
+  if (!status.ok()) {
+    SENSCORD_LOG_ERROR_TAGGED("libcamera", "Failed to write kRegOpdAwbMode");
+  }
+
+  uint16_t valid  = kOpdAwbHValid << 8 | kOpdAwbVValid;
+  uint32_t offset = kOpdAwbHOffset << 16 | kOpdAwbVOffset;
+
+  status = reg_handle_.WriteRegister(kRegOpdAwbValid, (uint8_t *)(&valid),
+                                     sizeof(valid));
+  if (!status.ok()) {
+    SENSCORD_LOG_ERROR_TAGGED("libcamera", "Failed to write kRegOpdAwbValid");
+  }
+
+  status = reg_handle_.WriteRegister(kRegOpdAwbOffset, (uint8_t *)(&offset),
+                                     sizeof(offset));
+  if (!status.ok()) {
+    SENSCORD_LOG_ERROR_TAGGED("libcamera", "Failed to write kRegOpdAwbOffset");
+  }
+}
+
 uint32_t LibcameraAdapter::ConvertHorizontalToSensor(uint32_t target) {
   return (uint32_t)((target * IMX500_FULL_RESOLUTION_WIDTH) /
                     camera_image_size_width_);
@@ -2792,26 +2912,17 @@ bool LibcameraAdapter::SetAeMeteringUserWindow(uint16_t top, uint16_t left,
     return false;
   }
 
-  status = reg_handle_.WriteRegister(kRegOpdAeArbVOffset, (uint8_t *)(&top),
-                                     sizeof(top));
+  uint32_t offset = top << 16 | left;
+  uint32_t valid  = height << 16 | width;
+
+  status = reg_handle_.WriteRegister(kRegOpdAeArbOffset, (uint8_t *)(&offset),
+                                     sizeof(offset));
   if (!status.ok()) {
     return false;
   }
 
-  status = reg_handle_.WriteRegister(kRegOpdAeArbHOffset, (uint8_t *)(&left),
-                                     sizeof(left));
-  if (!status.ok()) {
-    return false;
-  }
-
-  status = reg_handle_.WriteRegister(kRegOpdAeArbVValid, (uint8_t *)(&height),
-                                     sizeof(height));
-  if (!status.ok()) {
-    return false;
-  }
-
-  status = reg_handle_.WriteRegister(kRegOpdAeArbHValid, (uint8_t *)(&width),
-                                     sizeof(width));
+  status = reg_handle_.WriteRegister(kRegOpdAeArbValid, (uint8_t *)(&valid),
+                                     sizeof(valid));
   if (!status.ok()) {
     return false;
   }
@@ -2847,7 +2958,6 @@ bool LibcameraAdapter::UpdateAeMetering(void) {
                                 "Failed to set ae metering full-screen size.");
       return false;
     }
-
   } else if (ae_metering_mode_ == kAeMeteringUserWindow) {
     uint16_t top, left, width, height;
     if (!ConvertWindowToSensor(&top, &left, &width, &height)) {
@@ -2869,58 +2979,6 @@ bool LibcameraAdapter::UpdateAeMetering(void) {
   }
 
   return true;
-}
-
-// Helper function: Write 8-bit register with retry and verification
-bool LibcameraAdapter::WriteRegisterWithVerify(uint16_t addr, uint8_t value,
-                                               const char *reg_name) {
-  senscord::Status status;
-  for (int attempt = 0; attempt < kRegisterRetries; ++attempt) {
-    status = reg_handle_.WriteRegister(addr, &value);
-    if (!status.ok()) {
-      SENSCORD_LOG_WARNING_TAGGED("libcamera", "Write %s attempt %d failed",
-                                  reg_name, attempt);
-      usleep(kRegisterRetryDelayUs);
-      continue;
-    }
-    uint8_t read_back = 0;
-    status            = reg_handle_.ReadRegister(addr, &read_back);
-    if (status.ok() && read_back == value) {
-      return true;
-    }
-    SENSCORD_LOG_WARNING_TAGGED("libcamera", "Verify %s attempt %d mismatch",
-                                reg_name, attempt);
-    usleep(kRegisterRetryDelayUs);
-  }
-  return false;
-}
-
-// Helper function: Write 16-bit register (big-endian) with retry and
-// verification
-bool LibcameraAdapter::WriteRegister16WithVerify(uint16_t addr, uint16_t value,
-                                                 const char *reg_name) {
-  senscord::Status status;
-  uint8_t bytes[2];
-  WriteBigEndian16(bytes, value);
-
-  for (int attempt = 0; attempt < kRegisterRetries; ++attempt) {
-    status = reg_handle_.WriteRegister(addr, bytes, sizeof(bytes));
-    if (!status.ok()) {
-      SENSCORD_LOG_WARNING_TAGGED("libcamera", "Write %s attempt %d failed",
-                                  reg_name, attempt);
-      usleep(kRegisterRetryDelayUs);
-      continue;
-    }
-    uint8_t read_back[2] = {0};
-    status = reg_handle_.ReadRegister(addr, read_back, sizeof(read_back));
-    if (status.ok() && read_back[0] == bytes[0] && read_back[1] == bytes[1]) {
-      return true;
-    }
-    SENSCORD_LOG_WARNING_TAGGED("libcamera", "Verify %s attempt %d mismatch",
-                                reg_name, attempt);
-    usleep(kRegisterRetryDelayUs);
-  }
-  return false;
 }
 
 // Helper function: Read 8-bit register with retry
@@ -2961,9 +3019,11 @@ bool LibcameraAdapter::SetMaxExposureTime(void) {
     return false;
   }
 
-  // Write 16-bit register as big-endian (MSB first) with retry and verification
-  if (!WriteRegister16WithVerify(kRegAelineMaxshtLimitType1,
-                                 aeline_maxsht_limit_type1, "AELINE_MAXSHT")) {
+  status = reg_handle_.WriteRegister(
+      kRegAelineMaxshtLimitType1,
+      reinterpret_cast<uint8_t *>(&aeline_maxsht_limit_type1),
+      sizeof(aeline_maxsht_limit_type1));
+  if (!status.ok()) {
     return false;
   }
 
@@ -3003,10 +3063,9 @@ bool LibcameraAdapter::GetTimePerH(uint32_t &time_per_h) {
       continue;
     }
 
-    // Read 16-bit register as big-endian (MSB first)
-    uint8_t pll_mpy_bytes[2];
-    status = reg_handle_.ReadRegister(kRegIvtpllMpy, pll_mpy_bytes,
-                                      sizeof(pll_mpy_bytes));
+    status = reg_handle_.ReadRegister(kRegIvtpllMpy,
+                                      reinterpret_cast<uint8_t *>(&ivt_pll_mpy),
+                                      sizeof(ivt_pll_mpy));
     if (!status.ok()) {
       SENSCORD_LOG_WARNING_TAGGED(
           "libcamera", "GetTimePerH: Read IvtpllMpy attempt %d failed: %s",
@@ -3014,7 +3073,6 @@ bool LibcameraAdapter::GetTimePerH(uint32_t &time_per_h) {
       usleep(kRegisterRetryDelayUs);
       continue;
     }
-    ivt_pll_mpy = ReadBigEndian16(pll_mpy_bytes);
 
     status =
         reg_handle_.ReadRegister(kRegIvtSyckDiv, (uint8_t *)(&ivt_syck_div));
@@ -3049,10 +3107,10 @@ bool LibcameraAdapter::GetTimePerH(uint32_t &time_per_h) {
     ivt_pxck = ivt_pxck / (uint64_t)ivt_prepllck_div * (uint64_t)ivt_pll_mpy;
     ivt_pxck = ivt_pxck / ((uint64_t)ivt_syck_div * (uint64_t)ivt_pxck_div);
 
-    // Read 16-bit register as big-endian (MSB first)
-    uint8_t line_length_bytes[2];
-    status = reg_handle_.ReadRegister(kRegLineLengthPck, line_length_bytes,
-                                      sizeof(line_length_bytes));
+    uint16_t line_length_pck;
+    status = reg_handle_.ReadRegister(
+        kRegLineLengthPck, reinterpret_cast<uint8_t *>(&line_length_pck),
+        sizeof(line_length_pck));
     if (!status.ok()) {
       SENSCORD_LOG_WARNING_TAGGED(
           "libcamera", "GetTimePerH: Read LineLengthPck attempt %d failed: %s",
@@ -3060,7 +3118,6 @@ bool LibcameraAdapter::GetTimePerH(uint32_t &time_per_h) {
       usleep(kRegisterRetryDelayUs);
       continue;
     }
-    uint16_t line_length_pck = ReadBigEndian16(line_length_bytes);
 
     uint64_t v, t;
     v = line_length_pck;
@@ -3105,12 +3162,12 @@ bool LibcameraAdapter::SetMinExposureTime(void) {
     shtminline = static_cast<uint8_t>(value);
   }
 
-  SENSCORD_LOG_DEBUG_TAGGED(
-      "libcamera",
-      "SetMinExposureTime: time_per_h=%u shtminline=%u",
-      time_per_h, shtminline);
+  SENSCORD_LOG_DEBUG_TAGGED("libcamera",
+                            "SetMinExposureTime: time_per_h=%u shtminline=%u",
+                            time_per_h, shtminline);
 
-  if (!WriteRegisterWithVerify(kRegShtminline, shtminline, "SHTMINLINE")) {
+  status = reg_handle_.WriteRegister(kRegShtminline, &shtminline);
+  if (!status.ok()) {
     return false;
   }
 
@@ -3130,7 +3187,8 @@ bool LibcameraAdapter::SetMaxGain(void) {
     agcgain1_type1 = (uint8_t)value;
   }
 
-  if (!WriteRegisterWithVerify(kRegAgcgain1Type1, agcgain1_type1, "AGCGAIN")) {
+  status = reg_handle_.WriteRegister(kRegAgcgain1Type1, &agcgain1_type1);
+  if (!status.ok()) {
     return false;
   }
 
@@ -3160,8 +3218,10 @@ bool LibcameraAdapter::SetConvergenceSpeed(void) {
     return false;
   }
 
-  // Write 16-bit register as big-endian (MSB first) with retry and verification
-  if (!WriteRegister16WithVerify(kRegErrscllmit, errscllmit, "ERRSCLLMIT")) {
+  status = reg_handle_.WriteRegister(kRegErrscllmit,
+                                     reinterpret_cast<uint8_t *>(&errscllmit),
+                                     sizeof(errscllmit));
+  if (!status.ok()) {
     return false;
   }
 
@@ -3169,20 +3229,31 @@ bool LibcameraAdapter::SetConvergenceSpeed(void) {
 }
 
 bool LibcameraAdapter::UpdateAutoExposureParam(void) {
-  if (options_->exposure_index != 0) {
+  if (exposure_mode_ != kExposureModeParamAuto) {
     SENSCORD_LOG_WARNING_TAGGED(
         "libcamera", "Since it is not in Auto mode, skipped the settings.");
     return true;
   }
 
-  if (!is_set_ae_param_) {
-    SENSCORD_LOG_WARNING_TAGGED("libcamera", "AutoExposureParam is not set.");
-    return false;
-  }
-
   if (!isfinite(auto_exposure_.max_gain)) {
     SENSCORD_LOG_WARNING_TAGGED("libcamera",
                                 "AutoExposure max_gain is INFINITY.");
+    return false;
+  }
+
+  uint8_t mode = kAeAutoMode;
+  senscord::Status status =
+      reg_handle_.WriteRegister(kRegAeModeSn1, (uint8_t *)(&mode));
+  if (!status.ok()) {
+    SENSCORD_LOG_ERROR_TAGGED("libcamera", "Failed to set AE mode.");
+    return false;
+  }
+
+  uint16_t evref_type1 = kEvrefType1;
+  status = reg_handle_.WriteRegister(kRegEvrefType1, (uint8_t *)(&evref_type1),
+                                     sizeof(evref_type1));
+  if (!status.ok()) {
+    SENSCORD_LOG_ERROR_TAGGED("libcamera", "Failed to set evref type1.");
     return false;
   }
 
@@ -3213,13 +3284,14 @@ bool LibcameraAdapter::GetMaxExposureTime(uint32_t &max_exposure_time) {
   senscord::Status status;
 
   // Read 16-bit register as big-endian (MSB first)
-  uint8_t bytes[2];
-  status = reg_handle_.ReadRegister(kRegAelineMaxshtLimitType1, bytes,
-                                    sizeof(bytes));
+  uint16_t aeline_maxsht_limit_type1;
+  status = reg_handle_.ReadRegister(
+      kRegAelineMaxshtLimitType1,
+      reinterpret_cast<uint8_t *>(&aeline_maxsht_limit_type1),
+      sizeof(aeline_maxsht_limit_type1));
   if (!status.ok()) {
     return false;
   }
-  uint16_t aeline_maxsht_limit_type1 = ReadBigEndian16(bytes);
 
   max_exposure_time = aeline_maxsht_limit_type1 * 100;
 
@@ -3269,12 +3341,13 @@ bool LibcameraAdapter::GetConvergenceSpeed(uint32_t &convergence_speed) {
   senscord::Status status;
 
   // Read 16-bit register as big-endian (MSB first)
-  uint8_t bytes[2];
-  status = reg_handle_.ReadRegister(kRegErrscllmit, bytes, sizeof(bytes));
+  uint16_t errscllmit;
+  status = reg_handle_.ReadRegister(kRegErrscllmit,
+                                    reinterpret_cast<uint8_t *>(&errscllmit),
+                                    sizeof(errscllmit));
   if (!status.ok()) {
     return false;
   }
-  uint16_t errscllmit = ReadBigEndian16(bytes);
 
   convergence_speed = (uint32_t)(kConvergenceSpeedDivisor / errscllmit);
 
@@ -3372,15 +3445,10 @@ bool LibcameraAdapter::SetPresetEvCompensation(void) {
 }
 
 bool LibcameraAdapter::UpdateEvCompensation(void) {
-  if (options_->exposure_index != 0) {
+  if (exposure_mode_ != kExposureModeParamAuto) {
     SENSCORD_LOG_WARNING_TAGGED(
         "libcamera", "Since it is not in Auto mode, skipped the settings.");
     return true;
-  }
-
-  if (!is_set_ev_compensation_) {
-    SENSCORD_LOG_WARNING_TAGGED("libcamera", "EvCompensation is not set.");
-    return false;
   }
 
   if (!isfinite(ev_compensation_)) {

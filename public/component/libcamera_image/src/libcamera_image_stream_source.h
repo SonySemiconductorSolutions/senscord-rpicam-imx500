@@ -402,6 +402,7 @@ class LibcameraImageStreamSource : public senscord::ImageStreamSource {
   CameraImageSizeProperty camera_image_size_;
   CameraFrameRateProperty camera_frame_rate_;
   ImageCropProperty image_crop_;
+  ImageCropProperty cached_image_crop_;  // Cache for change detection
   IspFrameRateProperty isp_frame_rate_;
 };
 
