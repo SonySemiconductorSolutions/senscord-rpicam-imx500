@@ -483,6 +483,35 @@ struct CameraAutoExposureMeteringProperty {
 };
 
 /**
+ * SubFrameProperty
+ */
+const char kSubFramePropertyKey[] = "sub_frame_property";
+
+/**
+ * @brief Property for sub frame information
+ */
+struct SubFrameProperty {
+  uint32_t current_num;
+  uint32_t division_num;
+
+  SENSCORD_SERIALIZE_DEFINE(current_num, division_num)
+};
+
+/**
+ * TensorValidProperty
+ */
+const char kTensorValidPropertyKey[] = "tensor_valid_property";
+
+/**
+ * @brief Property TensorValidProperty.
+ */
+struct TensorValidProperty {
+  bool valid;
+
+  SENSCORD_SERIALIZE_DEFINE(valid)
+};
+
+/**
  * IspImageProperty
  */
 const char kIspImagePropertyKey[] = "isp_image_property";

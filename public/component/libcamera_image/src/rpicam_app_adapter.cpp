@@ -23,6 +23,7 @@
 
 #include <array>
 #include <cmath>
+#include <cstring>
 #include <nlohmann/json.hpp>
 #include <optional>
 
@@ -141,6 +142,7 @@ LibcameraAdapter::LibcameraAdapter()
       no_image_crop_{true},
       is_running_(false),
       auto_exposure_{10000, 100, 51.0f, 2},
+      manual_exposure_{10000, 0.0f},
       ev_compensation_(0.0f) {}
 LibcameraAdapter::~LibcameraAdapter() {}
 
@@ -149,12 +151,9 @@ senscord::Status LibcameraAdapter::Open(
     senscord::ImageProperty &image_property) {
   std::lock_guard<std::mutex> lock(LibcameraAdapter::mutex_camera_manager_);
 
-  manual_exposure_.keep          = false;
-  manual_exposure_.exposure_time = 0;
-  manual_exposure_.gain          = 0.0;
-  util_                          = util;
-  device_name_                   = device_name;
-  libcam_                        = new RPiCamApp();
+  util_        = util;
+  device_name_ = device_name;
+  libcam_      = new RPiCamApp();
   std::string post_process_file;
   uint64_t uint_value      = 0;
   std::string string_value = "";
@@ -452,6 +451,11 @@ senscord::Status LibcameraAdapter::Start() {
 
   count_drop_frames_ = 0;
   is_running_        = true;
+
+  // Reset tensor shapes initialized flag so Start() causes a property update
+  std::memset(&tensor_shapes_property_, 0, sizeof(tensor_shapes_property_));
+  previous_tensor_shapes_total_elements_ = 0;
+  tensor_shapes_initialized_             = false;
 
   return senscord::Status::OK();
 }
@@ -1051,6 +1055,7 @@ void LibcameraAdapter::GetFrames(std::vector<senscord::FrameInfo> *frames,
       UpdateAeMetering();
       UpdateAutoExposureParam();
       UpdateEvCompensation();
+      UpdateManualExposureParam();
     }
     if (count_drop_frames_ > MAX_NUM_DROP_FRAMES) {
       payload = std::get<CompletedRequestPtr>(msg.payload);
@@ -1111,8 +1116,9 @@ void LibcameraAdapter::UpdateTensorShapesProperty(CompletedRequestPtr payload) {
     return;
   }
 
-  tensor_shapes_property_     = {};
-  uint32_t shapes_array_index = 0;
+  // Build a temporary tensor shapes property from metadata
+  senscord::libcamera_image::TensorShapesProperty new_tensor_shapes = {};
+  uint32_t shapes_array_index                                       = 0;
 
   for (uint32_t i = 0; i < output_info_ptr.numTensors; ++i) {
     const OutputTensorInfo &tensor_info = output_info_ptr.info[i];
@@ -1129,20 +1135,53 @@ void LibcameraAdapter::UpdateTensorShapesProperty(CompletedRequestPtr payload) {
       return;
     }
 
-    tensor_shapes_property_.shapes_array[shapes_array_index++] = num_dimensions;
+    new_tensor_shapes.shapes_array[shapes_array_index++] = num_dimensions;
     for (uint32_t j = 0; j < num_dimensions; ++j) {
       SENSCORD_LOG_DEBUG_TAGGED("libcamera", "info[%d]: size=%d", j,
                                 tensor_info.size[j]);
-      tensor_shapes_property_.shapes_array[shapes_array_index++] =
+      new_tensor_shapes.shapes_array[shapes_array_index++] =
           tensor_info.size[j];
     }
   }
 
-  tensor_shapes_property_.tensor_count = output_info_ptr.numTensors;
-  util_->UpdateChannelProperty(
-      AITRIOS_SENSOR_CHANNEL_ID_INFERENCE_OUTPUT,
-      senscord::libcamera_image::kLibcameraTensorShapesPropertyKey,
-      &tensor_shapes_property_);
+  new_tensor_shapes.tensor_count = output_info_ptr.numTensors;
+
+  // Update only if changed since last published shapes
+  if (IsTensorShapesChanged(new_tensor_shapes, shapes_array_index)) {
+    SENSCORD_LOG_DEBUG_TAGGED(
+        "libcamera", "Tensor shapes changed, updating channel property");
+    tensor_shapes_property_                = new_tensor_shapes;
+    previous_tensor_shapes_total_elements_ = shapes_array_index;
+    tensor_shapes_initialized_             = true;
+
+    util_->UpdateChannelProperty(
+        AITRIOS_SENSOR_CHANNEL_ID_INFERENCE_OUTPUT,
+        senscord::libcamera_image::kLibcameraTensorShapesPropertyKey,
+        &tensor_shapes_property_);
+  } else {
+    SENSCORD_LOG_DEBUG_TAGGED(
+        "libcamera", "Tensor shapes unchanged, skipping property update");
+  }
+}
+
+bool LibcameraAdapter::IsTensorShapesChanged(
+    const senscord::libcamera_image::TensorShapesProperty &new_shapes,
+    uint32_t new_total_elements) {
+  // If not initialized, consider it changed
+  if (!tensor_shapes_initialized_) {
+    return true;
+  }
+
+  if (tensor_shapes_property_.tensor_count != new_shapes.tensor_count) {
+    return true;
+  }
+
+  // Both have same structure, compare content with correct size
+  if (previous_tensor_shapes_total_elements_ == 0) {
+    return false;  // Both are empty, no change
+  }
+
+  return false;
 }
 
 senscord::Status LibcameraAdapter::ReleaseFrame(
@@ -1451,12 +1490,19 @@ senscord::Status LibcameraAdapter::GetAIModelVersion(
 }
 
 senscord::Status LibcameraAdapter::SetExposureMode(ExposureModeParam mode) {
-  senscord::Status status;
+  ExposureModeParam previous_mode = exposure_mode_;
 
   switch (mode) {
     case kExposureModeParamAuto:
-      options_->exposure_index = 0;
-      manual_exposure_.keep    = false;
+      exposure_mode_ = mode;
+      if (reg_handle_.IsEnableAccess()) {
+        if (!UpdateAutoExposureParam()) {
+          exposure_mode_ = previous_mode;
+          return SENSCORD_STATUS_FAIL("libcamera",
+                                      senscord::Status::kCauseHardwareError,
+                                      "Failed to update AutoExposureParam.");
+        }
+      }
       break;
     case kExposureModeParamGainFix:
       return SENSCORD_STATUS_FAIL("libcamera",
@@ -1467,35 +1513,38 @@ senscord::Status LibcameraAdapter::SetExposureMode(ExposureModeParam mode) {
                                   senscord::Status::kCauseNotSupported,
                                   "ExposureModeTimeFix is not supported.");
     case kExposureModeParamManual:
-      options_->exposure_index = kManualExposureIndex;
+      exposure_mode_ = mode;
+      if (reg_handle_.IsEnableAccess()) {
+        if (!UpdateManualExposureParam()) {
+          exposure_mode_ = previous_mode;
+          return SENSCORD_STATUS_FAIL("libcamera",
+                                      senscord::Status::kCauseHardwareError,
+                                      "Failed to update ManualExposureParam.");
+        }
+      }
       break;
     case kExposureModeParamHold:
-      /* Check if the previous value is retained. */
-      if (manual_exposure_.keep) {
-        options_->exposure_index = kManualExposureIndex;
-
-        /* Set the previous value. */
-        status = SetManualExposureParam(manual_exposure_.exposure_time,
-                                        manual_exposure_.gain);
+      if (reg_handle_.IsEnableAccess()) {
+        uint8_t hold_mode = kAeHoldMode;
+        senscord::Status status =
+            reg_handle_.WriteRegister(kRegAeModeSn1, (uint8_t *)(&hold_mode));
         if (!status.ok()) {
+          SENSCORD_LOG_ERROR_TAGGED("libcamera", "Failed to set AE mode.");
           return status;
         }
-      } else if (exposure_mode_ == kExposureModeParamManual) {
-        options_->exposure_index = kManualExposureIndex;
       } else {
-        return SENSCORD_STATUS_FAIL(
-            "libcamera", senscord::Status::kCauseInvalidOperation,
-            "ManualExposure was not executed previously.");
+        return SENSCORD_STATUS_FAIL("libcamera",
+                                    senscord::Status::kCauseInvalidOperation,
+                                    "I2C disable is not supported.");
       }
 
-      break;
+      // no change for exposure_mode_ to keep previous mode
+      return senscord::Status::OK();
     default:
       return SENSCORD_STATUS_FAIL("libcamera",
                                   senscord::Status::kCauseNotSupported,
                                   "mode(%d) is not supported.", mode);
   }
-
-  exposure_mode_ = mode;
 
   return senscord::Status::OK();
 }
@@ -1511,7 +1560,7 @@ senscord::Status LibcameraAdapter::SetAutoExposureParam(
   if (reg_handle_.IsEnableAccess()) {
     if (!UpdateAutoExposureParam()) {
       return SENSCORD_STATUS_FAIL("libcamera",
-                                  senscord::Status::kCauseNotSupported,
+                                  senscord::Status::kCauseHardwareError,
                                   "Failed to update AutoExposureParam.");
     }
   }
@@ -1669,22 +1718,15 @@ senscord::Status LibcameraAdapter::SetManualExposureParam(
   }
 
   // Record applied (clipped/rounded) values in adapter state in original units
-  manual_exposure_.keep = true;
   manual_exposure_.exposure_time =
       static_cast<uint32_t>(shutter_val) * kExposureTimeUnitConversion;
   manual_exposure_.gain = static_cast<float>(gain_val) * kGainUnitConversion;
 
-  // Apply to options/controls only when manual exposure index is selected
-  if (options_->exposure_index == kManualExposureIndex) {
-    try {
-      std::string shutter_str =
-          std::to_string(static_cast<uint32_t>(shutter_val)) + "us";
-      options_->shutter.set(shutter_str);
-      options_->gain = static_cast<float>(gain_val) * kGainUnitConversion;
-    } catch (...) {
+  if (reg_handle_.IsEnableAccess()) {
+    if (!UpdateManualExposureParam()) {
       return SENSCORD_STATUS_FAIL("libcamera",
-                                  senscord::Status::kCauseNotSupported,
-                                  "Failed to set manual exposure controls");
+                                  senscord::Status::kCauseHardwareError,
+                                  "Failed to update ManualExposureParam.");
     }
   }
 
@@ -2553,12 +2595,6 @@ bool LibcameraAdapter::GetDeviceID(std::string &device_id_str) {
 }
 
 void LibcameraAdapter::UpdateIspManualModeOff(void) {
-  if (exposure_mode_ != kExposureModeParamAuto) {
-    SENSCORD_LOG_INFO(
-        "ISP manual mode is not turned off because exposure mode is not auto");
-    return;
-  }
-
   senscord::Status status =
       reg_handle_.WriteRegister(kRegIspManualMode, &kIspManualModeOff);
   if (!status.ok()) {
@@ -3229,29 +3265,15 @@ bool LibcameraAdapter::SetConvergenceSpeed(void) {
 }
 
 bool LibcameraAdapter::UpdateAutoExposureParam(void) {
-  if (exposure_mode_ != kExposureModeParamAuto) {
-    SENSCORD_LOG_WARNING_TAGGED(
-        "libcamera", "Since it is not in Auto mode, skipped the settings.");
-    return true;
-  }
-
   if (!isfinite(auto_exposure_.max_gain)) {
     SENSCORD_LOG_WARNING_TAGGED("libcamera",
                                 "AutoExposure max_gain is INFINITY.");
     return false;
   }
 
-  uint8_t mode = kAeAutoMode;
-  senscord::Status status =
-      reg_handle_.WriteRegister(kRegAeModeSn1, (uint8_t *)(&mode));
-  if (!status.ok()) {
-    SENSCORD_LOG_ERROR_TAGGED("libcamera", "Failed to set AE mode.");
-    return false;
-  }
-
-  uint16_t evref_type1 = kEvrefType1;
-  status = reg_handle_.WriteRegister(kRegEvrefType1, (uint8_t *)(&evref_type1),
-                                     sizeof(evref_type1));
+  uint16_t evref_type1    = kEvrefType1;
+  senscord::Status status = reg_handle_.WriteRegister(
+      kRegEvrefType1, (uint8_t *)(&evref_type1), sizeof(evref_type1));
   if (!status.ok()) {
     SENSCORD_LOG_ERROR_TAGGED("libcamera", "Failed to set evref type1.");
     return false;
@@ -3275,6 +3297,86 @@ bool LibcameraAdapter::UpdateAutoExposureParam(void) {
   if (!SetConvergenceSpeed()) {
     SENSCORD_LOG_ERROR_TAGGED("libcamera", "Failed to set convergence_speed.");
     return false;
+  }
+
+  if (exposure_mode_ != kExposureModeParamAuto) {
+    SENSCORD_LOG_WARNING_TAGGED(
+        "libcamera", "Since it is not in Auto mode, skipped the settings.");
+    return true;
+  } else {
+    uint8_t mode = kAeAutoMode;
+    status       = reg_handle_.WriteRegister(kRegAeModeSn1, (uint8_t *)(&mode));
+    if (!status.ok()) {
+      SENSCORD_LOG_ERROR_TAGGED("libcamera", "Failed to set AE mode.");
+      return false;
+    }
+  }
+
+  return true;
+}
+
+bool LibcameraAdapter::UpdateManualExposureParam(void) {
+  uint16_t ae_shutter = 0;
+  uint32_t calc_val   = 0;
+  calc_val = manual_exposure_.exposure_time / kExposureTimeUnitConversion;
+  if (calc_val > 0xFFFF) {
+    ae_shutter = 0xFFFF;
+    SENSCORD_LOG_INFO("clipped value(from %" PRIu32 " to %" PRIu32 ")",
+                      manual_exposure_.exposure_time,
+                      static_cast<uint32_t>(ae_shutter) *
+                          kExposureTimeUnitConversion);
+  } else {
+    ae_shutter = static_cast<uint16_t>(calc_val);
+  }
+  senscord::Status status = reg_handle_.WriteRegister(
+      kRegAeUserSht0, (uint8_t *)(&ae_shutter), sizeof(ae_shutter));
+  if (!status.ok()) {
+    SENSCORD_LOG_ERROR_TAGGED("libcamera", "Failed to set AE shutter.");
+    return false;
+  }
+
+  uint8_t ae_gain  = 0;
+  double calc_gain = 0.0;
+
+  // Convert value to in 0.3dB units from 1.0dB units(round down).
+  calc_gain = static_cast<double>(manual_exposure_.gain) / kGainUnitConversion;
+  if (calc_gain < 0x0) {
+    ae_gain = 0x0;
+    SENSCORD_LOG_INFO("clipped value(from %f to %f)", manual_exposure_.gain,
+                      static_cast<float>(ae_gain) * kGainUnitConversion);
+  } else if (calc_gain > 0xFF) {
+    ae_gain = 0xFF;
+    SENSCORD_LOG_INFO("clipped value(from %f to %f)", manual_exposure_.gain,
+                      static_cast<float>(ae_gain) * kGainUnitConversion);
+  } else {
+    ae_gain = static_cast<uint8_t>(calc_gain);
+  }
+  status = reg_handle_.WriteRegister(kRegAeUserAgc0, &ae_gain);
+  if (!status.ok()) {
+    SENSCORD_LOG_ERROR_TAGGED("libcamera", "Failed to set AE gain.");
+    return false;
+  }
+
+  if (exposure_mode_ != kExposureModeParamManual) {
+    SENSCORD_LOG_WARNING_TAGGED(
+        "libcamera", "Since it is not in Manual mode, skipped the settings.");
+    return true;
+  } else {
+    uint8_t shtminline = 0;
+
+    status =
+        reg_handle_.WriteRegister(kRegShtminline, (uint8_t *)(&shtminline));
+    if (!status.ok()) {
+      SENSCORD_LOG_ERROR_TAGGED("libcamera", "Failed to write SHTMINLINE");
+      return false;
+    }
+
+    uint8_t mode = kAeManualMode;
+    status       = reg_handle_.WriteRegister(kRegAeModeSn1, (uint8_t *)(&mode));
+    if (!status.ok()) {
+      SENSCORD_LOG_ERROR_TAGGED("libcamera", "Failed to set AE mode.");
+      return false;
+    }
   }
 
   return true;
@@ -3445,12 +3547,6 @@ bool LibcameraAdapter::SetPresetEvCompensation(void) {
 }
 
 bool LibcameraAdapter::UpdateEvCompensation(void) {
-  if (exposure_mode_ != kExposureModeParamAuto) {
-    SENSCORD_LOG_WARNING_TAGGED(
-        "libcamera", "Since it is not in Auto mode, skipped the settings.");
-    return true;
-  }
-
   if (!isfinite(ev_compensation_)) {
     SENSCORD_LOG_WARNING_TAGGED("libcamera", "EvCompensation is INFINITY.");
     return false;

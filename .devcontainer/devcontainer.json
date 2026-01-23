@@ -1,13 +1,23 @@
 {
   "name": "Unit Test Environment",
-  "build": { "dockerfile": "Dockerfile" },
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+
+  // Workspace settings
   "workspaceFolder": "/workspace",
   "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind,consistency=cached",
+
+  // Environment variables
   "containerEnv": {
     "LANG": "C.UTF-8",
-    "LC_ALL": "C.UTF-8"
+    "LC_ALL": "C.UTF-8",
+    "WORKSPACE_ROOT": "/workspace",
+    "GIT_AUTH_TOKEN": "${localEnv:GIT_AUTH_TOKEN}"
   },
-  "postCreateCommand": "echo 'Dev Container setup completed!'",
+
+  // Clone senscord-dev on container creation
+  "postCreateCommand": "bash -lc '([ -x .devcontainer/clone_senscord_dev.sh ] && .devcontainer/clone_senscord_dev.sh || echo \"[warn] clone_senscord_dev.sh not found or not executable\") && echo \"Dev Container setup completed!\"'",
   "remoteUser": "ubuntu",
   "init": true
 }

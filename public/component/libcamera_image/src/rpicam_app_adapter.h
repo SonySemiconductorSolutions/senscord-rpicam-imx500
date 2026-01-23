@@ -120,7 +120,6 @@ struct AutoExposureParam {
 };
 
 struct ManualExposureParam {
-  bool keep;
   uint32_t exposure_time;
   float gain;
 };
@@ -315,6 +314,7 @@ class LibcameraAdapter {
   bool SetMaxGain(void);
   bool SetConvergenceSpeed(void);
   bool UpdateAutoExposureParam(void);
+  bool UpdateManualExposureParam(void);
   bool GetMaxExposureTime(uint32_t &max_exposure_time);
   bool GetMinExposureTime(uint32_t &min_exposure_time);
   bool GetMaxGain(float &max_gain);
@@ -362,6 +362,8 @@ class LibcameraAdapter {
   senscord::libcamera_image::ImageRotationProperty rotation_property_;
   senscord::libcamera_image::CameraImageFlipProperty flip_property_;
   senscord::libcamera_image::TensorShapesProperty tensor_shapes_property_;
+  uint32_t previous_tensor_shapes_total_elements_ = 0;
+  bool tensor_shapes_initialized_                 = false;
   libcamera::Rectangle sensor_output_;
   int32_t norm_val_[4];
   uint32_t norm_shift_[4];
@@ -393,6 +395,9 @@ class LibcameraAdapter {
   std::vector<SupportedIspParam> supported_isp_params_;
 
   void UpdateTensorShapesProperty(CompletedRequestPtr payload);
+  bool IsTensorShapesChanged(
+      const senscord::libcamera_image::TensorShapesProperty &new_shapes,
+      uint32_t new_total_elements);
   void UpdateImageRotationProperty(void);
 };
 

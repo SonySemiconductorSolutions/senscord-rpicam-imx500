@@ -19,6 +19,7 @@
 #include <thread>
 
 #include "rpicam_app_adapter.h"
+#include "senscord/inference_stream/inference_stream_types.h"
 #include "senscord/logger.h"
 #include "senscord/status.h"
 #include "v4l2_ctrl_manager.h"
@@ -28,8 +29,11 @@ static constexpr const char *kBlockName = "libcamera";
 namespace fs = std::filesystem;
 
 // Default frame rate (30fps)
-static constexpr uint32_t kDefaultFrameRateNum   = 30;
-static constexpr uint32_t kDefaultFrameRateDenom = 1;
+static constexpr uint32_t kDefaultFrameRateNum   = 3000;
+static constexpr uint32_t kDefaultFrameRateDenom = 100;
+
+// Default AI Model Bundle ID for RPI
+static constexpr const char *kDefaultAIModelBundleId = "999997";
 
 #ifndef ARGUMENT_NULL_CHECK
 #define ARGUMENT_NULL_CHECK(arg, cause)                                  \
@@ -67,13 +71,26 @@ static inline void SafeStringCopy(char *dest, size_t dest_size,
 const uint64_t LibcameraImageStreamSource::kWaitOnGetFrames = 4'000'000;
 
 LibcameraImageStreamSource::LibcameraImageStreamSource()
-    : imx500_device_id_(""),
-      image_crop_{0, 0, 0, 0},
-      cached_image_crop_{0, 0, 0, 0},
+    : properties_initialized_(false),
+      imx500_device_id_(""),
+      camera_exposure_mode_{KCameraExposureModeAuto},
+      camera_anti_flicker_mode_{kCameraAntiFlickerModeOff},
+      camera_manual_exposure_{10000, 0.0f},
+      camera_auto_exposure_metering_{
+          kCameraAutoExposureMeteringModeFullScreen,
+          {0, 0, CAMERA_IMAGE_HEIGHT_DEFAULT, CAMERA_IMAGE_WIDTH_DEFAULT}},
+      camera_image_flip_{false, false},
       camera_image_size_{CAMERA_IMAGE_WIDTH_DEFAULT,
                          CAMERA_IMAGE_HEIGHT_DEFAULT,
-                         kCameraScalingPolicySensitivity} {
-  camera_exposure_mode_.mode = KCameraExposureModeAuto;
+                         kCameraScalingPolicySensitivity},
+      camera_frame_rate_{kDefaultFrameRateNum, kDefaultFrameRateDenom},
+      image_crop_{0, 0, 0, 0},
+      cached_image_crop_{0, 0, 0, 0},
+      isp_frame_rate_{kDefaultFrameRateNum, kDefaultFrameRateDenom} {
+  // RPI only supports AI model "999997"
+  SafeStringCopy(ai_model_bundle_id_.ai_model_bundle_id,
+                 sizeof(ai_model_bundle_id_.ai_model_bundle_id),
+                 kDefaultAIModelBundleId);
 }
 
 LibcameraImageStreamSource::~LibcameraImageStreamSource() {
@@ -86,8 +103,10 @@ senscord::Status LibcameraImageStreamSource::Open(
   core_ = core;
   util_ = util;
 
-  memset(ai_model_bundle_id_.ai_model_bundle_id, 0,
-         sizeof(char) * kAIModelBundleIdLength);
+  // RPI only supports AI model "999997" - reset to default
+  SafeStringCopy(ai_model_bundle_id_.ai_model_bundle_id,
+                 sizeof(ai_model_bundle_id_.ai_model_bundle_id),
+                 kDefaultAIModelBundleId);
 
   // register optional properties
   SENSCORD_REGISTER_PROPERTY(util_,
@@ -159,6 +178,10 @@ senscord::Status LibcameraImageStreamSource::Open(
       senscord::libcamera_image::IspFrameRateProperty);
   SENSCORD_REGISTER_PROPERTY(util_, senscord::kStreamStatePropertyKey,
                              senscord::StreamStateProperty);
+  SENSCORD_REGISTER_PROPERTY(util_, senscord::kInferencePropertyKey,
+                             senscord::InferenceProperty);
+  SENSCORD_REGISTER_PROPERTY(util_, senscord::kAIModelIndexPropertyKey,
+                             senscord::AIModelIndexProperty);
 
   std::string device       = "";
   uint64_t uint_value      = 0;
@@ -178,6 +201,10 @@ senscord::Status LibcameraImageStreamSource::Open(
     image_property_.width        = 640;
     image_property_.height       = 480;
     image_property_.pixel_format = senscord::kPixelFormatBGR24;
+    // Initialize stride_bytes to default value for BGR24 (3 bytes per pixel).
+    // This will be recalculated by libcamera_adapter::Configure() based on
+    // actual hardware alignment requirements.
+    image_property_.stride_bytes = image_property_.width * 3;
 
     {
       status = util_->GetStreamArgument("pixel_format", &string_value);
@@ -187,8 +214,6 @@ senscord::Status LibcameraImageStreamSource::Open(
     }
     util_->UpdateChannelProperty(AITRIOS_SENSOR_CHANNEL_ID_INFERENCE_RAW_IMAGE,
                                  senscord::kImagePropertyKey, &image_property_);
-    // Do not treat image_property_.stride_bytes in this time, because it will
-    // be filled by libcamera_adapter::Configure()
     util_->SendEventPropertyUpdated(senscord::kImagePropertyKey);
   }
 
@@ -283,6 +308,8 @@ senscord::Status LibcameraImageStreamSource::Start() {
 
   std::unique_lock<std::mutex> _lck(device_id_mutex_);
 
+  // Reset properties initialized flag
+  properties_initialized_ = false;
   // Reset property cache to ensure properties are updated on first frame
   // after stream_start
   cached_image_crop_.left   = 0;
@@ -345,6 +372,51 @@ void LibcameraImageStreamSource::GetFrames(
     // Sleep to avoid busy loop
     senscord::osal::OSSleep(kWaitOnGetFrames);
   } else {
+    // Initialize channel properties on first frame after stream start.
+    // These properties are constant during streaming and only need to be set
+    // once.
+    if (!properties_initialized_) {
+      // AIModelBundleIdProperty - set for inference input image channel (0)
+      util_->UpdateChannelProperty(
+          senscord::kChannelIdImage(0),
+          senscord::libcamera_image::kLibcameraAIModelBundleIdPropertyKey,
+          &ai_model_bundle_id_);
+
+      // AIModelIndexProperty - set for inference input image channel (0)
+      senscord::AIModelIndexProperty ai_model_index{};
+      ai_model_index.ai_model_index = 0;
+      util_->UpdateChannelProperty(senscord::kChannelIdImage(0),
+                                   senscord::kAIModelIndexPropertyKey,
+                                   &ai_model_index);
+
+      // InferenceProperty - set data type for inference output channel (0)
+      senscord::InferenceProperty inference{};
+      SafeStringCopy(inference.data_type, sizeof(inference.data_type),
+                     kInferenceDataFormatTensor32Float);
+      util_->UpdateChannelProperty(senscord::kChannelIdImage(0),
+                                   senscord::kInferencePropertyKey, &inference);
+
+      // SubFrameProperty - set for both inference channels (0: input, 1: raw)
+      senscord::SubFrameProperty sub_frame{};
+      sub_frame.current_num  = 1;
+      sub_frame.division_num = 1;
+      util_->UpdateChannelProperty(senscord::kChannelIdImage(0),
+                                   senscord::kSubFramePropertyKey, &sub_frame);
+      util_->UpdateChannelProperty(senscord::kChannelIdImage(1),
+                                   senscord::kSubFramePropertyKey, &sub_frame);
+
+      // TensorValidProperty - indicate tensors are valid when present
+      senscord::TensorValidProperty tensor_valid{};
+      tensor_valid.valid = true;
+      util_->UpdateChannelProperty(senscord::kChannelIdImage(0),
+                                   senscord::kTensorValidPropertyKey,
+                                   &tensor_valid);
+      util_->UpdateChannelProperty(senscord::kChannelIdImage(1),
+                                   senscord::kTensorValidPropertyKey,
+                                   &tensor_valid);
+      properties_initialized_ = true;
+    }
+
     // Update ImageCropProperty only if changed
     if (image_crop_.left != cached_image_crop_.left ||
         image_crop_.top != cached_image_crop_.top ||
@@ -566,8 +638,13 @@ senscord::Status LibcameraImageStreamSource::Set(
     case senscord::libcamera_image::AccessProperty::Type::kControl:
       status = adapter_.SetControl(property);
       break;
+
     default:
-      break;
+      return SENSCORD_STATUS_FAIL(
+          "libcamera", senscord::Status::kCauseOutOfRange,
+          "LibcameraImageStreamSource::Set(libcamera_image::"
+          "AccessProperty) type(%d) is out of range",
+          property->type);
   }
 
   if (status.ok()) {
@@ -686,8 +763,9 @@ senscord::Status LibcameraImageStreamSource::Set(
     return status;
   }
 
-  memcpy(ai_model_bundle_id_.ai_model_bundle_id, property->ai_model_bundle_id,
-         senscord::libcamera_image::kAIModelBundleIdLength);
+  SafeStringCopy(ai_model_bundle_id_.ai_model_bundle_id,
+                 sizeof(ai_model_bundle_id_.ai_model_bundle_id),
+                 property->ai_model_bundle_id);
 
   return senscord::Status::OK();
 }
@@ -699,8 +777,10 @@ senscord::Status LibcameraImageStreamSource::Get(
   SENSCORD_LOG_DEBUG_TAGGED("libcamera",
                             "LibcameraImageStreamSource::Get(libcamera_image::"
                             "AIModelBundleIdProperty)");
-  memcpy(property->ai_model_bundle_id, ai_model_bundle_id_.ai_model_bundle_id,
-         senscord::libcamera_image::kAIModelBundleIdLength);
+
+  SafeStringCopy(property->ai_model_bundle_id,
+                 sizeof(property->ai_model_bundle_id),
+                 ai_model_bundle_id_.ai_model_bundle_id);
   return senscord::Status::OK();
 }
 senscord::Status LibcameraImageStreamSource::Set(
@@ -768,6 +848,40 @@ senscord::Status LibcameraImageStreamSource::Set(
   /*ToDO
     implement channel mask */
   return senscord::Status::OK();
+}
+
+// InferenceProperty: stream-level GET returns default "inference_t32f",
+// SET is not allowed (INVALID_OPERATION)
+senscord::Status LibcameraImageStreamSource::Get(
+    const std::string &key, senscord::InferenceProperty *property) {
+  ARGUMENT_NULL_CHECK(property, InvalidArgument);
+  SafeStringCopy(property->data_type, sizeof(property->data_type),
+                 kInferenceDataFormatTensor32Float);
+  return senscord::Status::OK();
+}
+
+senscord::Status LibcameraImageStreamSource::Set(
+    const std::string &key, const senscord::InferenceProperty *property) {
+  ARGUMENT_NULL_CHECK(property, InvalidArgument);
+  return SENSCORD_STATUS_FAIL("libcamera",
+                              senscord::Status::kCauseInvalidOperation,
+                              "not settable property");
+}
+
+// AIModelIndexProperty: stream-level API not supported (tests expect
+// NOT_SUPPORTED)
+senscord::Status LibcameraImageStreamSource::Get(
+    const std::string &key, senscord::AIModelIndexProperty *property) {
+  ARGUMENT_NULL_CHECK(property, InvalidArgument);
+  return SENSCORD_STATUS_FAIL("libcamera", senscord::Status::kCauseNotSupported,
+                              "not supported property");
+}
+
+senscord::Status LibcameraImageStreamSource::Set(
+    const std::string &key, const senscord::AIModelIndexProperty *property) {
+  ARGUMENT_NULL_CHECK(property, InvalidArgument);
+  return SENSCORD_STATUS_FAIL("libcamera", senscord::Status::kCauseNotSupported,
+                              "not supported property");
 }
 
 senscord::Status LibcameraImageStreamSource::Get(

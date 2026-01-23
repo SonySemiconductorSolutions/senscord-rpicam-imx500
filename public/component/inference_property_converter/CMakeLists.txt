@@ -36,3 +36,8 @@ set_target_properties(${_target} PROPERTIES
 install(TARGETS ${_target}
     LIBRARY DESTINATION lib/senscord/converter
 )
+
+install(DIRECTORY ${PROJECT_SOURCE_DIR}/include/senscord
+    DESTINATION include
+    FILES_MATCHING PATTERN "*.h"
+)

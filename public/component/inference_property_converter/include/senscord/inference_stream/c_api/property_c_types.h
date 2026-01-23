@@ -232,7 +232,7 @@ struct senscord_camera_ev_compensation_property_t {
  * CameraAntiFlickerModeProperty
  * @see senscord::kCameraAntiFlickerModeProperty
  */
-#define SENSCORD_CAMERA_ANTI_FLICKER_PROPERTY_KEY \
+#define SENSCORD_CAMERA_ANTI_FLICKER_MODE_PROPERTY_KEY \
   "camera_anti_flicker_mode_property"
 
 /**
@@ -472,8 +472,37 @@ struct senscord_input_data_type_property_t {
  * @see senscord::CameraAutoExposureMeteringProperty
  */
 struct senscord_camera_auto_exposure_metering_property_t {
-  senscord_camera_auto_exposure_metering_mode_t mode;
-  senscord_rectangle_region_parameter_t window;
+  enum senscord_camera_auto_exposure_metering_mode_t mode;
+  struct senscord_rectangle_region_parameter_t window;
+};
+
+/**
+ * SubFrameProperty
+ * @see senscord::kSubFramePropertyKey
+ */
+#define SENSCORD_SUB_FRAME_PROPERTY_KEY "sub_frame_property"
+
+/**
+ * @brief Property for sub frame information.
+ * @see senscord::SubFrameProperty
+ */
+struct senscord_sub_frame_property_t {
+  uint32_t current_num;
+  uint32_t division_num;
+};
+
+/**
+ * TensorValidProperty
+ * @see senscord::kTensorValidPropertyKey
+ */
+#define SENSCORD_TENSOR_VALID_PROPERTY_KEY "tensor_valid_property"
+
+/**
+ * TensorValidProperty
+ * @see senscord::TensorValidProperty
+ */
+struct senscord_tensor_valid_property_t {
+  bool valid;
 };
 
 /**
