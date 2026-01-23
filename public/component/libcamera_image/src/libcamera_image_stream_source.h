@@ -17,6 +17,12 @@
 #include "senscord/serialize.h"
 #include "senscord/serialize_buffer.h"
 
+// Forward declarations for inference properties
+namespace senscord {
+struct InferenceProperty;
+struct AIModelIndexProperty;
+}  // namespace senscord
+
 #define INFO_STRING_CATEGORY_SENSOR_NAME      (0x00000000)
 #define INFO_STRING_CATEGORY_SENSOR_ID        (0x00000001)
 #define INFO_STRING_CATEGORY_KEY_GENERATION   (0x00000002)
@@ -378,6 +384,15 @@ class LibcameraImageStreamSource : public senscord::ImageStreamSource {
                        const senscord::StreamStateProperty* property);
   senscord::Status Get(const std::string& key,
                        senscord::StreamStateProperty* property);
+  senscord::Status Get(const std::string& key,
+                       senscord::InferenceProperty* property);
+  senscord::Status Set(const std::string& key,
+                       const senscord::InferenceProperty* property);
+
+  senscord::Status Get(const std::string& key,
+                       senscord::AIModelIndexProperty* property);
+  senscord::Status Set(const std::string& key,
+                       const senscord::AIModelIndexProperty* property);
 
  private:
   bool GetDeviceID(void);
@@ -391,6 +406,7 @@ class LibcameraImageStreamSource : public senscord::ImageStreamSource {
   senscord::FrameRateProperty framerate_property_;
   senscord::ImageProperty image_property_;
   senscord::libcamera_image::AIModelBundleIdProperty ai_model_bundle_id_;
+  bool properties_initialized_;
   uint32_t display_channel_;
   std::string imx500_device_id_;
   std::mutex device_id_mutex_;

@@ -31,6 +31,7 @@ class InferencePropertyConverterLibrary
       public StructConverterC<senscord_ai_model_index_property_t,
                               AIModelIndexProperty>,
       public StructConverterC<senscord_inference_property_t, InferenceProperty>,
+      public StructConverterC<senscord_sub_frame_property_t, SubFrameProperty>,
       public StructConverterC<senscord_tensor_shapes_property_t,
                               TensorShapesProperty>,
       public StructConverterC<senscord_post_process_available_property_t,
@@ -75,6 +76,8 @@ class InferencePropertyConverterLibrary
                               CameraAutoExposureMeteringProperty>,
       public StructConverterC<senscord_image_crop_property_t,
                               ImageCropProperty>,
+      public StructConverterC<senscord_tensor_valid_property_t,
+                              TensorValidProperty>,
       public StructConverterC<senscord_isp_image_property_t, IspImageProperty>,
       public StructConverterC<senscord_isp_frame_rate_property_t,
                               IspFrameRateProperty> {
@@ -94,6 +97,7 @@ class InferencePropertyConverterLibrary
                  AIModelBundleIdProperty);
   CONVERTER_FUNC(senscord_ai_model_index_property_t, AIModelIndexProperty);
   CONVERTER_FUNC(senscord_inference_property_t, InferenceProperty);
+  CONVERTER_FUNC(senscord_sub_frame_property_t, SubFrameProperty);
   CONVERTER_FUNC(senscord_tensor_shapes_property_t, TensorShapesProperty);
   CONVERTER_FUNC(senscord_post_process_available_property_t,
                  PostProcessAvailableProperty);
@@ -133,6 +137,7 @@ class InferencePropertyConverterLibrary
   CONVERTER_FUNC(senscord_camera_auto_exposure_metering_property_t,
                  CameraAutoExposureMeteringProperty);
   CONVERTER_FUNC(senscord_image_crop_property_t, ImageCropProperty);
+  CONVERTER_FUNC(senscord_tensor_valid_property_t, TensorValidProperty);
   CONVERTER_FUNC(senscord_isp_image_property_t, IspImageProperty);
   CONVERTER_FUNC(senscord_isp_frame_rate_property_t, IspFrameRateProperty);
 };

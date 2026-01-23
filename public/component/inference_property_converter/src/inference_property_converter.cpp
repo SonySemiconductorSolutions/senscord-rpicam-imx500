@@ -42,6 +42,7 @@ Status InferencePropertyConverterLibrary::Init(ConverterCollector* collector) {
   AddType(senscord_ai_model_bundle_id_property_t, AIModelBundleIdProperty);
   AddType(senscord_ai_model_index_property_t, AIModelIndexProperty);
   AddType(senscord_inference_property_t, InferenceProperty);
+  AddType(senscord_sub_frame_property_t, SubFrameProperty);
   AddType(senscord_tensor_shapes_property_t, TensorShapesProperty);
   AddType(senscord_post_process_available_property_t,
           PostProcessAvailableProperty);
@@ -72,6 +73,7 @@ Status InferencePropertyConverterLibrary::Init(ConverterCollector* collector) {
   AddType(senscord_camera_auto_exposure_metering_property_t,
           CameraAutoExposureMeteringProperty);
   AddType(senscord_image_crop_property_t, ImageCropProperty);
+  AddType(senscord_tensor_valid_property_t, TensorValidProperty);
   AddType(senscord_isp_image_property_t, IspImageProperty);
   AddType(senscord_isp_frame_rate_property_t, IspFrameRateProperty);
   return Status::OK();
@@ -101,6 +103,20 @@ Status InferencePropertyConverterLibrary::c_to_cxx(
 Status InferencePropertyConverterLibrary::cxx_to_c(
     const InferenceProperty& src, senscord_inference_property_t* dst) {
   StrCpyToCharArray(dst->data_type, src.data_type);
+  return Status::OK();
+}
+
+Status InferencePropertyConverterLibrary::c_to_cxx(
+    const senscord_sub_frame_property_t& src, SubFrameProperty* dst) {
+  dst->current_num  = src.current_num;
+  dst->division_num = src.division_num;
+  return Status::OK();
+}
+
+Status InferencePropertyConverterLibrary::cxx_to_c(
+    const SubFrameProperty& src, senscord_sub_frame_property_t* dst) {
+  dst->current_num  = src.current_num;
+  dst->division_num = src.division_num;
   return Status::OK();
 }
 
@@ -531,6 +547,19 @@ Status InferencePropertyConverterLibrary::cxx_to_c(
   dst->top    = src.top;
   dst->width  = src.width;
   dst->height = src.height;
+  return Status::OK();
+}
+
+// TensorValidProperty
+Status InferencePropertyConverterLibrary::c_to_cxx(
+    const senscord_tensor_valid_property_t& src, TensorValidProperty* dst) {
+  dst->valid = src.valid;
+  return Status::OK();
+}
+
+Status InferencePropertyConverterLibrary::cxx_to_c(
+    const TensorValidProperty& src, senscord_tensor_valid_property_t* dst) {
+  dst->valid = src.valid;
   return Status::OK();
 }
 

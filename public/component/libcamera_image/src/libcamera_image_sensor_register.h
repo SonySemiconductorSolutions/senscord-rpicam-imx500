@@ -74,9 +74,13 @@ const uint16_t kRegShtminline    = 0xE600U;  // Shutter Minimum Line Register
 const uint16_t kRegAgcgain1Type1 = 0xD26EU;  // AGC Gain1 Type1 Register
 const uint16_t kRegAespeedMoni   = 0xD2D8U;  // AE Speed Monitor Register
 const uint16_t kRegErrscllmit    = 0xD9B2U;  // Error Scale Limit Register
+const uint16_t kRegAeUserSht0    = 0xD98CU;  // AE User Shutter 0 Register
+const uint16_t kRegAeUserAgc0    = 0xD994U;  // AE User AGC 0 Register
 
 const uint8_t kIspManualModeOff = 0x00U;    // ISP Automatic Mode
 const uint8_t kAeAutoMode       = 0x00U;    // AE Auto Mode
+const uint8_t kAeHoldMode       = 0x01U;    // AE Hold Mode
+const uint8_t kAeManualMode     = 0x03U;    // AE Manual Mode
 const uint16_t kEvrefType1      = 0x1888U;  // Default EV Reference Type1 Value
 
 /* AWB Parameter */

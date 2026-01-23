@@ -1,6 +1,9 @@
 # DevContainer for Unit Tests
 FROM ubuntu:24.04
 
+# Explicitly set shell for consistent && behavior
+SHELL ["/bin/bash", "-c"]
+
 # Define build arguments and environment variables for maintainability
 ARG CMAKE_VERSION=3.31.6
 ARG NODE_VERSION=20.x
@@ -15,9 +18,11 @@ ENV DEBIAN_FRONTEND=noninteractive \
     NODE_VERSION=${NODE_VERSION} \
     ALLURE_VERSION=${ALLURE_VERSION}
 
+# Configure timezone and locale
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
+
 # Install all apt packages in one layer to optimize caching and size
-RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone \
-    && apt-get update \
+RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         # Build essentials
         build-essential \
@@ -31,6 +36,7 @@ RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone \
         gnupg \
         # Version control
         git \
+        gh \
         # Utilities
         unzip \
         sudo \
@@ -60,9 +66,10 @@ RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone \
         # Development tools (optional but useful)
         gdb \
         tree \
-    # Set GCC alternatives
+    # Set GCC alternatives to use GCC-13 (compatible with GCOV 13.3.0)
     && update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-13 100 \
     && update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-13 100 \
+    && update-alternatives --install /usr/bin/gcov gcov /usr/bin/gcov-13 100 \
     # Configure locale
     && locale-gen en_US.UTF-8 \
     && update-locale LANG=en_US.UTF-8 \
@@ -91,6 +98,17 @@ RUN curl -fsSL https://deb.nodesource.com/setup_${NODE_VERSION} | bash - \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
+# Install Google Test from source
+RUN git clone https://github.com/google/googletest.git -b v1.17.0 \
+    && cd googletest \
+    && mkdir build \
+    && cd build \
+    && cmake .. \
+    && make \
+    && make install \
+    && cd ../.. \
+    && rm -rf googletest
+
 # Configure the default ubuntu user (UID=1000, GID=1000) with sudo privileges
 # Ubuntu 24.04 base image already has this user, so we just configure it
 RUN echo "ubuntu ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
@@ -109,10 +127,10 @@ RUN echo "# Auto-navigate to test directory" >> ~/.bashrc \
     && echo 'export PATH="/usr/local/bin:$PATH"' >> ~/.bashrc \
     && echo "" >> ~/.bashrc \
     && echo "# Unit Test Environment Welcome Message" >> ~/.bashrc \
-    && echo "echo '📋 Unit Test Environment Ready!'" >> ~/.bashrc \
-    && echo "echo '📂 Current directory: test/scripts'" >> ~/.bashrc \
-    && echo "echo '🚀 Run ./run_unit_test.sh to execute all tests'" >> ~/.bashrc \
-    && echo "echo '🧹 Run ./clean_test_artifacts.sh to clean up all test artifacts'" >> ~/.bashrc \
+    && echo "echo 'Unit Test Environment Ready!'" >> ~/.bashrc \
+    && echo "echo 'Current directory: test/scripts'" >> ~/.bashrc \
+    && echo "echo 'Run ./run_unit_test.sh to execute all tests'" >> ~/.bashrc \
+    && echo "echo 'Run ./clean_test_artifacts.sh to clean up all test artifacts'" >> ~/.bashrc \
     && echo "echo ''" >> ~/.bashrc \
     && echo "" >> ~/.bashrc \
     && echo "# Convenient aliases for unit testing" >> ~/.bashrc \
@@ -128,7 +146,8 @@ RUN echo "=== Verifying installations ===" \
     && echo "Build tools:" \
     && cmake --version | head -1 \
     && gcc --version | head -1 \
-    && echo "LCOV: $(lcov --version | head -n 1)" \
+    && echo "Coverage tools:" \
+    && echo "LCOV: $(/usr/local/bin/lcov --version | head -n 1)" \
     && echo "Test frameworks:" \
     && echo "Google Test: Source available in /usr/src/gtest ($(ls /usr/src/gtest/ | wc -l) files)" \
     && echo "Allure dependencies:" \

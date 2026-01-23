@@ -57,7 +57,7 @@ constexpr char kLibcameraIspFrameRatePropertyKey[] = "isp_frame_rate_property";
  */
 struct AccessProperty {
   typedef enum { kProperty, kControl } Type;
-  int type;
+  Type type;
 
   std::string id;
   AnyValue value;
@@ -318,5 +318,6 @@ SENSCORD_SERIALIZE_ADD_ENUM(senscord::libcamera_image::CameraAntiFlickerMode)
 SENSCORD_SERIALIZE_ADD_ENUM(
     senscord::libcamera_image::CameraAutoExposureMeteringMode)
 SENSCORD_SERIALIZE_ADD_ENUM(senscord::libcamera_image::CameraScalingPolicy)
+SENSCORD_SERIALIZE_ADD_ENUM(senscord::libcamera_image::AccessProperty::Type)
 
 #endif
