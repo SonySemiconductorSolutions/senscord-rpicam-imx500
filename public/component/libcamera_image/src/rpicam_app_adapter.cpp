@@ -1532,6 +1532,7 @@ senscord::Status LibcameraAdapter::SetExposureMode(ExposureModeParam mode) {
           SENSCORD_LOG_ERROR_TAGGED("libcamera", "Failed to set AE mode.");
           return status;
         }
+        exposure_mode_ = mode;
       } else {
         return SENSCORD_STATUS_FAIL("libcamera",
                                     senscord::Status::kCauseInvalidOperation,
@@ -3177,6 +3178,10 @@ bool LibcameraAdapter::GetTimePerH(uint32_t &time_per_h) {
 
 bool LibcameraAdapter::SetMinExposureTime(void) {
   senscord::Status status;
+
+  if (exposure_mode_ == kExposureModeParamManual) {
+    return true;
+  }
 
   if (auto_exposure_.max_exposure_time < auto_exposure_.min_exposure_time) {
     auto_exposure_.min_exposure_time = auto_exposure_.max_exposure_time;
