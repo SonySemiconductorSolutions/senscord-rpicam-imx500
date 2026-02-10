@@ -36,6 +36,7 @@ pkg_check_modules(LIBCAMERA REQUIRED libcamera)
 file(GLOB PUBLIC_HEADER_FILES
      ${PROJECT_SOURCE_DIR}/include/senscord/${OUTPUT_INCLUDE_DIR}/*.h)
 
+add_compile_options(-DIMX500_ISP_MANUAL_MODE_ON)
 # Create senscord.lib target.
 add_library(${TARGET_NAME} SHARED
             src/libcamera_image_stream_source_factory.cpp

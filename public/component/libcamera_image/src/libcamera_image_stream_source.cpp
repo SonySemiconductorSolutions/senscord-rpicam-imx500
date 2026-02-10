@@ -927,6 +927,11 @@ senscord::Status LibcameraImageStreamSource::Set(
   SENSCORD_LOG_DEBUG_TAGGED("libcamera",
                             "LibcameraImageStreamSource::Set(libcamera_image::"
                             "CameraExposureModeProperty)");
+#ifdef IMX500_ISP_MANUAL_MODE_ON
+  return SENSCORD_STATUS_FAIL("libcamera", senscord::Status::kCauseNotSupported,
+                              "LibcameraImageStreamSource::Set(libcamera_image::"
+                            "CameraExposureModeProperty) not supported");
+#else
   senscord::Status status;
 
   switch (property->mode) {
@@ -981,6 +986,7 @@ senscord::Status LibcameraImageStreamSource::Set(
   camera_exposure_mode_ = *property;
 
   return senscord::Status::OK();
+#endif
 }
 
 senscord::Status LibcameraImageStreamSource::Get(
@@ -990,8 +996,14 @@ senscord::Status LibcameraImageStreamSource::Get(
   SENSCORD_LOG_DEBUG_TAGGED("libcamera",
                             "LibcameraImageStreamSource::Get(libcamera_image::"
                             "CameraExposureModeProperty)");
+#ifdef IMX500_ISP_MANUAL_MODE_ON
+  return SENSCORD_STATUS_FAIL("libcamera", senscord::Status::kCauseNotSupported,
+                              "LibcameraImageStreamSource::Get(libcamera_image::"
+                            "CameraExposureModeProperty) not supported");
+#else
   *property = camera_exposure_mode_;
   return senscord::Status::OK();
+#endif
 }
 
 senscord::Status LibcameraImageStreamSource::Set(
@@ -1001,6 +1013,11 @@ senscord::Status LibcameraImageStreamSource::Set(
   SENSCORD_LOG_DEBUG_TAGGED("libcamera",
                             "LibcameraImageStreamSource::Set(libcamera_image::"
                             "CameraAutoExposureProperty)");
+#ifdef IMX500_ISP_MANUAL_MODE_ON
+  return SENSCORD_STATUS_FAIL("libcamera", senscord::Status::kCauseNotSupported,
+                              "LibcameraImageStreamSource::Set(libcamera_image::"
+                            "CameraAutoExposureProperty) not supported");
+#else
   senscord::Status status;
 
   CameraAutoExposureProperty camera_auto_exposure = *property;
@@ -1032,6 +1049,7 @@ senscord::Status LibcameraImageStreamSource::Set(
   }
 
   return senscord::Status::OK();
+#endif
 }
 
 senscord::Status LibcameraImageStreamSource::Get(
@@ -1041,6 +1059,11 @@ senscord::Status LibcameraImageStreamSource::Get(
   SENSCORD_LOG_DEBUG_TAGGED("libcamera",
                             "LibcameraImageStreamSource::Get(libcamera_image::"
                             "CameraAutoExposureProperty)");
+#ifdef IMX500_ISP_MANUAL_MODE_ON
+  return SENSCORD_STATUS_FAIL("libcamera", senscord::Status::kCauseNotSupported,
+                              "LibcameraImageStreamSource::Get(libcamera_image::"
+                            "CameraAutoExposureProperty) not supported");
+#else
   senscord::Status status;
 
   CameraAutoExposureProperty camera_auto_exposure;
@@ -1056,6 +1079,7 @@ senscord::Status LibcameraImageStreamSource::Get(
   *property = camera_auto_exposure;
 
   return senscord::Status::OK();
+#endif
 }
 
 senscord::Status LibcameraImageStreamSource::Set(
@@ -1065,6 +1089,11 @@ senscord::Status LibcameraImageStreamSource::Set(
   SENSCORD_LOG_DEBUG_TAGGED("libcamera",
                             "LibcameraImageStreamSource::Set(libcamera_image::"
                             "CameraEvCompensationProperty)");
+#ifdef IMX500_ISP_MANUAL_MODE_ON
+  return SENSCORD_STATUS_FAIL("libcamera", senscord::Status::kCauseNotSupported,
+                              "LibcameraImageStreamSource::Set(libcamera_image::"
+                            "CameraEvCompensationProperty) not supported");
+#else
   senscord::Status status;
 
   CameraEvCompensationProperty camera_ev_compensation = *property;
@@ -1076,6 +1105,7 @@ senscord::Status LibcameraImageStreamSource::Set(
   }
 
   return senscord::Status::OK();
+#endif
 }
 
 senscord::Status LibcameraImageStreamSource::Get(
@@ -1085,6 +1115,11 @@ senscord::Status LibcameraImageStreamSource::Get(
   SENSCORD_LOG_DEBUG_TAGGED("libcamera",
                             "LibcameraImageStreamSource::Get(libcamera_image::"
                             "CameraEvCompensationProperty)");
+#ifdef IMX500_ISP_MANUAL_MODE_ON
+  return SENSCORD_STATUS_FAIL("libcamera", senscord::Status::kCauseNotSupported,
+                              "LibcameraImageStreamSource::Get(libcamera_image::"
+                            "CameraEvCompensationProperty) not supported");
+#else
   senscord::Status status;
 
   CameraEvCompensationProperty camera_ev_compensation;
@@ -1097,6 +1132,7 @@ senscord::Status LibcameraImageStreamSource::Get(
 
   *property = camera_ev_compensation;
   return senscord::Status::OK();
+#endif
 }
 
 senscord::Status LibcameraImageStreamSource::Set(
@@ -1172,6 +1208,11 @@ senscord::Status LibcameraImageStreamSource::Set(
   SENSCORD_LOG_DEBUG_TAGGED("libcamera",
                             "LibcameraImageStreamSource::Set(libcamera_image::"
                             "CameraManualExposureProperty)");
+#ifdef IMX500_ISP_MANUAL_MODE_ON
+  return SENSCORD_STATUS_FAIL("libcamera", senscord::Status::kCauseNotSupported,
+                              "LibcameraImageStreamSource::Set(libcamera_image::"
+                            "CameraManualExposureProperty) not supported");
+#else
   senscord::Status status;
 
   // Validate gain per T4 behavior: reject NaN/Inf values
@@ -1204,6 +1245,7 @@ senscord::Status LibcameraImageStreamSource::Set(
   }
 
   return senscord::Status::OK();
+#endif
 }
 
 senscord::Status LibcameraImageStreamSource::Get(
@@ -1213,8 +1255,14 @@ senscord::Status LibcameraImageStreamSource::Get(
   SENSCORD_LOG_DEBUG_TAGGED("libcamera",
                             "LibcameraImageStreamSource::Get(libcamera_image::"
                             "CameraManualExposureProperty)");
+#ifdef IMX500_ISP_MANUAL_MODE_ON
+  return SENSCORD_STATUS_FAIL("libcamera", senscord::Status::kCauseNotSupported,
+                              "LibcameraImageStreamSource::Get(libcamera_image::"
+                            "CameraManualExposureProperty) not supported");
+#else
   *property = camera_manual_exposure_;
   return senscord::Status::OK();
+#endif
 }
 
 senscord::Status LibcameraImageStreamSource::Set(
@@ -1225,6 +1273,11 @@ senscord::Status LibcameraImageStreamSource::Set(
   SENSCORD_LOG_DEBUG_TAGGED("libcamera",
                             "LibcameraImageStreamSource::Set(libcamera_image::"
                             "CameraAutoExposureMeteringProperty)");
+#ifdef IMX500_ISP_MANUAL_MODE_ON
+  return SENSCORD_STATUS_FAIL("libcamera", senscord::Status::kCauseNotSupported,
+                              "LibcameraImageStreamSource::Set(libcamera_image::"
+                            "CameraAutoExposureMeteringProperty) not supported");
+#else
   senscord::Status status;
   AeMeteringWindow AeWindow;
 
@@ -1258,6 +1311,7 @@ senscord::Status LibcameraImageStreamSource::Set(
   camera_auto_exposure_metering_ = *property;
 
   return senscord::Status::OK();
+#endif
 }
 
 senscord::Status LibcameraImageStreamSource::Get(
@@ -1267,8 +1321,14 @@ senscord::Status LibcameraImageStreamSource::Get(
   SENSCORD_LOG_DEBUG_TAGGED("libcamera",
                             "LibcameraImageStreamSource::Get(libcamera_image::"
                             "CameraAutoExposureMeteringProperty)");
+#ifdef IMX500_ISP_MANUAL_MODE_ON
+  return SENSCORD_STATUS_FAIL("libcamera", senscord::Status::kCauseNotSupported,
+                              "LibcameraImageStreamSource::Get(libcamera_image::"
+                            "CameraAutoExposureMeteringProperty) not supported");
+#else
   *property = camera_auto_exposure_metering_;
   return senscord::Status::OK();
+#endif
 }
 
 senscord::Status LibcameraImageStreamSource::Set(

@@ -315,6 +315,7 @@ class LibcameraAdapter {
   bool SetConvergenceSpeed(void);
   bool UpdateAutoExposureParam(void);
   bool UpdateManualExposureParam(void);
+  bool UpdateAntiFlickerMode(void);
   bool GetMaxExposureTime(uint32_t &max_exposure_time);
   bool GetMinExposureTime(uint32_t &min_exposure_time);
   bool GetMaxGain(float &max_gain);
@@ -390,6 +391,7 @@ class LibcameraAdapter {
   float isp_frame_rate_;
   AeMeteringMode ae_metering_mode_;
   AeMeteringWindow ae_metering_window_;
+  AeAntiFlickerMode ae_anti_flicker_mode_;
   float ev_compensation_;
   std::vector<float> ev_array_ = {0.0f, 0.25f, 0.5f, 0.75f, 1.0f, 1.25f, 1.5f};
   std::vector<SupportedIspParam> supported_isp_params_;

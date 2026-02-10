@@ -537,6 +537,7 @@ senscord::Status LibcameraAdapter::Configure(
     options_->transform = libcamera::Transform::Identity;
   }
 
+#ifndef IMX500_ISP_MANUAL_MODE_ON
   if (exposure_mode_ == kExposureModeParamAuto) {
     /* Disable AE and AWB in libcamera. */
     std::string shutter_str = "10000us";
@@ -548,6 +549,7 @@ senscord::Status LibcameraAdapter::Configure(
   options_->awb_index  = kAwbDisabledIndex;
   options_->awb_gain_r = 1.0f;
   options_->awb_gain_b = 1.0f;
+#endif
 
   std::unique_ptr<libcamera::CameraConfiguration> config =
       camera_->generateConfiguration({libcamera::StreamRole::Raw});
@@ -1055,6 +1057,7 @@ void LibcameraAdapter::GetFrames(std::vector<senscord::FrameInfo> *frames,
       UpdateAeMetering();
       UpdateAutoExposureParam();
       UpdateEvCompensation();
+      UpdateAntiFlickerMode();
       UpdateManualExposureParam();
     }
     if (count_drop_frames_ > MAX_NUM_DROP_FRAMES) {
@@ -1620,28 +1623,52 @@ senscord::Status LibcameraAdapter::GetAeEvCompensation(float &ev_compensation) {
 
 senscord::Status LibcameraAdapter::SetAeAntiFlickerMode(
     AeAntiFlickerMode mode) {
-  switch (mode) {
+  ae_anti_flicker_mode_ = mode;
+
+  if (reg_handle_.IsEnableAccess()) {
+    if (!UpdateAntiFlickerMode()) {
+      return SENSCORD_STATUS_FAIL("libcamera",
+                                  senscord::Status::kCauseHardwareError,
+                                  "Failed to update AntiFlickerMode.");
+    }
+  }
+  return senscord::Status::OK();
+}
+
+bool LibcameraAdapter::UpdateAntiFlickerMode(void) {
+#ifdef IMX500_ISP_MANUAL_MODE_ON
+  libcamera::ControlList custom_controls;
+  switch (ae_anti_flicker_mode_) {
     case kAeAntiFlickerModeOff:
-      options_->flicker_period.set("0us");
+      custom_controls.set(controls::AeFlickerMode, controls::FlickerOff);
       break;
     case kAeAntiFlickerModeAuto:
-      return SENSCORD_STATUS_FAIL("libcamera",
-                                  senscord::Status::kCauseNotSupported,
-                                  "mode(%d) is not supported.", mode);
-
+      custom_controls.set(controls::AeFlickerMode, controls::FlickerAuto);
+      break;
     case kAeAntiFlickerModeForce50Hz:
       options_->flicker_period.set(AE_FLICKER_PERIOD_50HZ);
+      custom_controls.set(controls::AeFlickerMode, controls::FlickerManual);
+      custom_controls.set(
+          controls::AeFlickerPeriod,
+          options_->flicker_period.get<std::chrono::microseconds>());
       break;
     case kAeAntiFlickerModeForce60Hz:
       options_->flicker_period.set(AE_FLICKER_PERIOD_60HZ);
+      custom_controls.set(controls::AeFlickerMode, controls::FlickerManual);
+      custom_controls.set(
+          controls::AeFlickerPeriod,
+          options_->flicker_period.get<std::chrono::microseconds>());
       break;
     default:
-      return SENSCORD_STATUS_FAIL("libcamera",
-                                  senscord::Status::kCauseNotSupported,
-                                  "mode(%d) is not supported.", mode);
+      SENSCORD_LOG_ERROR_TAGGED("libcamera",
+                                "Anti flicker mode %d is not supported.",
+                                static_cast<int>(ae_anti_flicker_mode_));
+      return false;
   }
+  libcam_->SetControls(custom_controls);
+#endif
 
-  return senscord::Status::OK();
+  return true;
 }
 
 senscord::Status LibcameraAdapter::SetAeMetering(AeMeteringMode mode,
@@ -2596,15 +2623,27 @@ bool LibcameraAdapter::GetDeviceID(std::string &device_id_str) {
 }
 
 void LibcameraAdapter::UpdateIspManualModeOff(void) {
+#ifdef IMX500_ISP_MANUAL_MODE_ON
+  return;
+#else
   senscord::Status status =
       reg_handle_.WriteRegister(kRegIspManualMode, &kIspManualModeOff);
   if (!status.ok()) {
     SENSCORD_LOG_ERROR_TAGGED("libcamera",
                               "Failed to write ISP manual mode register");
   }
+  status = reg_handle_.WriteRegister(kRegAelineAgcLimitType1, &kAelineAgcLimit);
+  if (!status.ok()) {
+    SENSCORD_LOG_ERROR_TAGGED(
+        "libcamera", "Failed to write AELINE AGC Limit Type1 register");
+  }
+#endif
 }
 
 void LibcameraAdapter::InitializeWhiteBalanceParam(void) {
+#ifdef IMX500_ISP_MANUAL_MODE_ON
+  return;
+#else
   senscord::Status status;
 
   // Set AWB mode to auto
@@ -2707,6 +2746,7 @@ void LibcameraAdapter::InitializeWhiteBalanceParam(void) {
   if (!status.ok()) {
     SENSCORD_LOG_ERROR_TAGGED("libcamera", "Failed to write kRegOpdAwbOffset");
   }
+#endif
 }
 
 uint32_t LibcameraAdapter::ConvertHorizontalToSensor(uint32_t target) {
@@ -2968,6 +3008,9 @@ bool LibcameraAdapter::SetAeMeteringUserWindow(uint16_t top, uint16_t left,
 }
 
 bool LibcameraAdapter::UpdateAeMetering(void) {
+#ifdef IMX500_ISP_MANUAL_MODE_ON
+  return true;
+#else
   senscord::Status status;
   uint8_t pre_mode;
 
@@ -3016,6 +3059,7 @@ bool LibcameraAdapter::UpdateAeMetering(void) {
   }
 
   return true;
+#endif
 }
 
 // Helper function: Read 8-bit register with retry
@@ -3270,6 +3314,9 @@ bool LibcameraAdapter::SetConvergenceSpeed(void) {
 }
 
 bool LibcameraAdapter::UpdateAutoExposureParam(void) {
+#ifdef IMX500_ISP_MANUAL_MODE_ON
+  return true;
+#else
   if (!isfinite(auto_exposure_.max_gain)) {
     SENSCORD_LOG_WARNING_TAGGED("libcamera",
                                 "AutoExposure max_gain is INFINITY.");
@@ -3318,9 +3365,13 @@ bool LibcameraAdapter::UpdateAutoExposureParam(void) {
   }
 
   return true;
+#endif
 }
 
 bool LibcameraAdapter::UpdateManualExposureParam(void) {
+#ifdef IMX500_ISP_MANUAL_MODE_ON
+  return true;
+#else
   uint16_t ae_shutter = 0;
   uint32_t calc_val   = 0;
   calc_val = manual_exposure_.exposure_time / kExposureTimeUnitConversion;
@@ -3385,6 +3436,7 @@ bool LibcameraAdapter::UpdateManualExposureParam(void) {
   }
 
   return true;
+#endif
 }
 
 bool LibcameraAdapter::GetMaxExposureTime(uint32_t &max_exposure_time) {
@@ -3552,6 +3604,9 @@ bool LibcameraAdapter::SetPresetEvCompensation(void) {
 }
 
 bool LibcameraAdapter::UpdateEvCompensation(void) {
+#ifdef IMX500_ISP_MANUAL_MODE_ON
+  return true;
+#else
   if (!isfinite(ev_compensation_)) {
     SENSCORD_LOG_WARNING_TAGGED("libcamera", "EvCompensation is INFINITY.");
     return false;
@@ -3582,6 +3637,7 @@ bool LibcameraAdapter::UpdateEvCompensation(void) {
   }
 
   return true;
+#endif
 }
 
 bool LibcameraAdapter::ReadEvCompensation(float &ev_compensation) {
